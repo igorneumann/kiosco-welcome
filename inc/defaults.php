@@ -52,9 +52,15 @@ return [
     ],
 
     // --- Mantenedor ---
+    // Texto central 1 (arriba) y texto central 2 (debajo), cada uno con su tamaño y negrita
     'center_text'        => '',
     'center_font_mode'   => 'auto',     // auto | fixed
     'center_font_size'   => 6,          // en % del ancho de pantalla (vw) cuando es manual
+    'center_bold'        => false,
+    'center_text2'       => '',
+    'center_font_mode2'  => 'auto',
+    'center_font_size2'  => 4,
+    'center_bold2'       => false,
     'bottom_logo'        => '',         // '' = logo por defecto
     'logos'              => [],         // biblioteca de logos subidos por el mantenedor
 ];

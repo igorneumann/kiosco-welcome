@@ -54,6 +54,11 @@ echo json_encode([
     'center_text'       => $c['center_text'],
     'center_font_mode'  => $c['center_font_mode'],
     'center_font_size'  => (float)$c['center_font_size'],
+    'center_bold'       => (bool)$c['center_bold'],
+    'center_text2'      => $c['center_text2'],
+    'center_font_mode2' => $c['center_font_mode2'],
+    'center_font_size2' => (float)$c['center_font_size2'],
+    'center_bold2'      => (bool)$c['center_bold2'],
     'logo'              => $c['bottom_logo'] ?: $c['default_logo'],
     'icons'             => $icons,
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

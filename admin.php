@@ -34,11 +34,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'save_center':
                 $anchor = 'contenido';
                 config_update(function (array &$c) {
-                    $c['center_text']      = post_str('center_text', 2000);
-                    $c['center_font_mode'] = post_enum('center_font_mode', ['auto', 'fixed'], 'auto');
-                    $c['center_font_size'] = post_num('center_font_size', 1, 40, 6);
+                    foreach (['', '2'] as $n) {
+                        $c['center_text' . $n]      = post_str('center_text' . $n, 2000);
+                        $c['center_font_mode' . $n] = post_enum('center_font_mode' . $n, ['auto', 'fixed'], 'auto');
+                        $c['center_font_size' . $n] = post_num('center_font_size' . $n, 1, 40, 6);
+                        $c['center_bold' . $n]      = !empty($_POST['center_bold' . $n]);
+                    }
                 });
-                flash('Texto central guardado.');
+                flash('Textos centrales guardados.');
                 break;
 
             case 'upload_logo':
@@ -83,12 +86,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     foreach ($c['logos'] as $l) { delete_upload($l); }
                     $c['logos']            = [];
                     $c['bottom_logo']      = '';
-                    $c['center_text']      = '';
-                    $c['center_font_mode'] = $d['center_font_mode'];
-                    $c['center_font_size'] = $d['center_font_size'];
+                    foreach (['center_text', 'center_font_mode', 'center_font_size', 'center_bold',
+                              'center_text2', 'center_font_mode2', 'center_font_size2', 'center_bold2'] as $k) {
+                        $c[$k] = $d[$k];
+                    }
                 });
                 auth_log('reset_content', $me['username']);
-                flash('Configuración restablecida: sin texto central, logo de Bezares y logos subidos eliminados.');
+                flash('Configuración restablecida: sin textos centrales, logo de Bezares y logos subidos eliminados.');
                 break;
 
             case 'change_own_password':
@@ -370,21 +374,28 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
 
 <!-- ============ CONTENIDO (mantenedor) ============ -->
 <section id="contenido" class="card">
-  <h2>Texto central</h2>
+  <h2>Textos centrales</h2>
   <form method="post">
     <?= csrf_field() ?><input type="hidden" name="action" value="save_center">
-    <label>Texto (puede usar varias líneas)
-      <textarea name="center_text" rows="4" maxlength="2000"><?= e($c['center_text']) ?></textarea></label>
-    <div class="row">
-      <label class="radio"><input type="radio" name="center_font_mode" value="auto"<?= chk($c['center_font_mode'], 'auto') ?>> Auto (ajusta al ancho)</label>
-      <label class="radio"><input type="radio" name="center_font_mode" value="fixed"<?= chk($c['center_font_mode'], 'fixed') ?>> Manual</label>
-    </div>
-    <div class="row size-row">
-      <label class="grow">Tamaño manual: <output id="sizeOut"><?= e($c['center_font_size']) ?></output> % del ancho de pantalla
-        <input type="range" name="center_font_size" id="sizeRange" min="1" max="40" step="0.5" value="<?= e($c['center_font_size']) ?>"></label>
-      <button type="button" class="btn" id="autoBtn">AUTO</button>
-    </div>
-    <button class="btn primary">Guardar texto</button>
+    <?php foreach (['' => 'Texto central 1 (arriba)', '2' => 'Texto central 2 (debajo)'] as $n => $title): ?>
+    <fieldset class="ctext-block">
+      <legend><?= $title ?></legend>
+      <label>Texto (puede usar varias líneas; vacío = no se muestra)
+        <textarea name="center_text<?= $n ?>" rows="3" maxlength="2000"><?= e($c['center_text' . $n]) ?></textarea></label>
+      <div class="row">
+        <label class="radio"><input type="radio" name="center_font_mode<?= $n ?>" value="auto" data-mode="auto"<?= chk($c['center_font_mode' . $n], 'auto') ?>> Auto (ajusta al ancho)</label>
+        <label class="radio"><input type="radio" name="center_font_mode<?= $n ?>" value="fixed" data-mode="fixed"<?= chk($c['center_font_mode' . $n], 'fixed') ?>> Manual</label>
+        <label class="radio"><input type="checkbox" name="center_bold<?= $n ?>" value="1"<?= $c['center_bold' . $n] ? ' checked' : '' ?>> <strong>Negrita</strong></label>
+      </div>
+      <div class="row size-row">
+        <label class="grow">Tamaño manual: <output data-size-out><?= e($c['center_font_size' . $n]) ?></output> % del ancho de pantalla
+          <input type="range" name="center_font_size<?= $n ?>" data-size min="1" max="40" step="0.5" value="<?= e($c['center_font_size' . $n]) ?>"></label>
+        <button type="button" class="btn" data-auto>AUTO</button>
+      </div>
+    </fieldset>
+    <?php endforeach; ?>
+    <p class="hint">En modo Auto cada texto se ajusta al ancho de la pantalla; si entre los dos no caben en el alto disponible, se reducen ambos en proporción.</p>
+    <button class="btn primary">Guardar textos</button>
   </form>
 </section>
 
@@ -417,8 +428,8 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
 
 <section class="card warn">
   <h2>Restablecer configuración por defecto</h2>
-  <p>Quita el texto central, vuelve al logo de Bezares y <strong>borra todos los logos subidos</strong>.</p>
-  <form method="post" data-confirm="¿Restablecer? Se borrará el texto central y todos los logos subidos.">
+  <p>Quita los dos textos centrales, vuelve al logo de Bezares y <strong>borra todos los logos subidos</strong>.</p>
+  <form method="post" data-confirm="¿Restablecer? Se borrarán los textos centrales y todos los logos subidos.">
     <?= csrf_field() ?><input type="hidden" name="action" value="reset_content">
     <button class="btn danger">Restablecer por defecto</button>
   </form>

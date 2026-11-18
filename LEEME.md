@@ -22,7 +22,7 @@ Recomendado: mueva `data/` fuera de `public_html` (p. ej. `/home/USUARIO/welcome
 
 ## Roles
 
-**Mantenedor**: texto central (varias líneas), tamaño manual o botón **AUTO** (ajusta la fuente al ancho y alto disponibles), biblioteca de logos inferiores (subir, elegir, borrar), **Restablecer por defecto** (sin texto central, logo de Bezares, borra los logos subidos), su contraseña.
+**Mantenedor**: dos textos centrales, uno debajo del otro (varias líneas cada uno), cada uno con su tamaño manual o botón **AUTO** (ajusta la fuente al ancho; si juntos no caben en el alto, se reducen en proporción) y opción de **negrita**, biblioteca de logos inferiores (subir, elegir, borrar), **Restablecer por defecto** (sin textos centrales, logo de Bezares, borra los logos subidos), su contraseña.
 
 **Administrador**: todo lo anterior, más imagen de encabezado, imagen de fondo, logo por defecto, textos de bienvenida (uno por línea, se alternan), colores (rodapié, líneas, textos, fondo), intensidad y velocidad del latido del fondo, iconos del rodapié (añadir hasta 8, quitar, ordenar, icono integrado o imagen propia, URL / código iframe / YouTube, ventana emergente o página completa, ancho, alto, texto, color, posición y tamaño del botón de cierre), usuarios y restablecimiento total.
 
@@ -40,7 +40,7 @@ La respuesta es siempre la misma (no revela si el usuario existe), hay límite d
 - Fondo con latido doble tipo corazón; logo inferior con "jiggle" cada 5 s.
 - Líneas decorativas con punto central que se estiran para ocupar siempre el 100 % del alto.
 - Los cambios hechos en el panel aparecen solos en el kiosco en ≤ 1 minuto (sin interrumpir una ventana abierta).
-- **5 clics en el fondo del rodapié en 3 s** → recarga invalidando la caché.
+- **3 clics en el fondo en menos de 2 s** (cualquier zona libre de la página o del rodapié, no sobre los iconos) → recarga invalidando la caché.
 - Si se cae la red, sigue mostrando la última configuración recibida.
 - Las webs cargadas van en un iframe aislado: no pueden sacar al kiosco de la página.
 
