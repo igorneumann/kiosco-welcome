@@ -184,8 +184,25 @@
   }
 
   /* ---------------- Ventanas emergentes ---------------- */
+  /* Comprobación en el propio kiosco (además de la del servidor): solo https, nunca el mismo origen,
+     y solo dominios de la lista permitida. */
+  function hostAllowed(host, list) {
+    host = host.toLowerCase();
+    return (list || []).some(function (d) {
+      return d.indexOf('*.') === 0 ? host.slice(-(d.length - 1)) === d.slice(1) : host === d;
+    });
+  }
+  function frameUrlOk(url) {
+    try {
+      var u = new URL(url);
+      return u.protocol === 'https:' && u.origin !== location.origin && !u.username && !u.port
+        && hostAllowed(u.hostname, cfg.frame_domains);
+    } catch (e) { return false; }
+  }
+
   function openModal(ic) {
     closeModal();
+    if (ic.blocked || (ic.type !== 'youtube' && !frameUrlOk(ic.url))) return;
     var full = ic.display === 'fullscreen';
     var ov = document.createElement('div');
     ov.className = 'overlay ' + (full ? 'full' : 'popup');
@@ -202,11 +219,13 @@
                '?autoplay=1&rel=0&playsinline=1&modestbranding=1';
       fr.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
       fr.setAttribute('allowfullscreen', '');
-      fr.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation');
+      fr.setAttribute('sandbox', 'allow-scripts allow-presentation' + (ic.allow_same_origin ? ' allow-same-origin' : ''));
     } else {
+      // Sin allow-top-navigation: la web cargada no puede sacar al kiosco de esta página.
+      // allow-same-origin solo si el administrador lo activa para ese icono (y nunca para el propio kiosco,
+      // que frameUrlOk ya ha descartado). El sandbox se fija antes de asignar src.
+      fr.setAttribute('sandbox', 'allow-scripts allow-forms' + (ic.allow_same_origin ? ' allow-same-origin' : ''));
       fr.src = ic.url;
-      // Sin allow-top-navigation: la web cargada no puede sacar al kiosco de esta página
-      fr.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
     }
 
     if (!full) {

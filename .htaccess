@@ -11,6 +11,8 @@ ServerSignature Off
   RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
   RewriteRule ^(inc|data)(/|$) - [F,L]
+  # Página del kiosco servida por PHP con una CSP basada en los dominios permitidos
+  RewriteRule ^VXM7D4mGu83ERwJC\.html$ kiosk.php [L]
   # Archivos/carpetas ocultos (excepto .well-known, necesario para el SSL automático de cPanel)
   RewriteCond %{REQUEST_URI} !^/\.well-known/
   RewriteRule (^|/)\. - [F,L]
@@ -19,7 +21,7 @@ ServerSignature Off
 AddType image/svg+xml .svg
 
 # Archivos que nunca deben servirse
-<FilesMatch "\.(json|log|lock|md|bak|sql|ini|sh|dist)$|^\.">
+<FilesMatch "\.(json|log|lock|md|bak|sql|ini|sh|dist|key)$|\.tmp[0-9a-f]+$|^\.">
   Require all denied
 </FilesMatch>
 
@@ -39,7 +41,7 @@ AddType image/svg+xml .svg
   # Seguridad de la página del kiosco
   <Files "VXM7D4mGu83ERwJC.html">
     Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
-    Header set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src https: http:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; object-src 'none'"
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src https://bezares.com https://*.bezares.com https://www.youtube-nocookie.com; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; object-src 'none'"
     Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
   </Files>
 

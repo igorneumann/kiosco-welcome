@@ -13,12 +13,14 @@ Sustituye a la instalación de WordPress. PHP 8.0 o superior (recomendado 8.1+),
 1. **Antes de subir**, edite `inc/settings.php` y cambie `SETUP_KEY` por una clave propia (mín. 12 caracteres). Revise también `BASE_URL` y `MAIL_FROM` (remitente de los correos de recuperación; debe ser un buzón del dominio bezares.com).
 2. Haga copia de seguridad de la carpeta actual de WordPress de welcome.bezares.com (cPanel → *Administrador de archivos* → comprimir) y vacíela, o cree una carpeta nueva y apunte el subdominio a ella en *Dominios*.
 3. Suba `welcome-kiosco.zip` a esa carpeta y use *Extraer*. Compruebe que se ven los archivos ocultos (`.htaccess`) en *Configuración → Mostrar archivos ocultos*.
-4. Permisos: carpetas `data/` y `uploads/` → 755; archivos → 644.
+4. Permisos: carpeta `uploads/` → 755; archivos → 644. Los datos (usuarios, contraseñas, registros, sesiones) se guardan **fuera de la web**, en `/home/USUARIO/welcome-kiosk-data` (se crea sola con permisos 700). Si su hosting no lo permite, fije la ruta en `DATA_DIR`.
 5. *MultiPHP Manager*: PHP 8.1 o superior. *MultiPHP INI Editor*: `upload_max_filesize = 8M`, `post_max_size = 10M`. Extensión `fileinfo` activada (*Select PHP Version → Extensions*).
 6. Abra `https://welcome.bezares.com/`, introduzca la clave de instalación y cree el usuario **administrador** y el **mantenedor**. A partir de ahí el formulario de instalación desaparece.
 7. En el equipo del kiosco, abra `https://welcome.bezares.com/VXM7D4mGu83ERwJC.html` en modo pantalla completa / kiosco del navegador.
 
-Recomendado: mueva `data/` fuera de `public_html` (p. ej. `/home/USUARIO/welcome-data`) y cambie `DATA_DIR` en `inc/settings.php`.
+Si venía de una versión anterior con los datos en `data/` dentro del sitio, se trasladan automáticamente a la nueva carpeta en la primera visita. Si la carpeta de datos quedara dentro de la web, el panel del administrador muestra un aviso en rojo.
+
+La URL del kiosco la sirve `kiosk.php` (regla de `.htaccess`) para enviar una CSP con los dominios permitidos. Si cambia `KIOSK_FILE`, cambie también esa regla.
 
 ## Roles
 
@@ -46,14 +48,34 @@ La respuesta es siempre la misma (no revela si el usuario existe), hay límite d
 
 ## Seguridad
 
-- Bloqueo de fuerza bruta: 5 fallos por IP o 10 por usuario en 15 min → bloqueo de 15 min, que se duplica en cada reincidencia (máx. 24 h). Retardo fijo de 1 s por fallo y mensaje genérico (no revela si el usuario existe).
-- Contraseñas con Argon2id/bcrypt; mínimo 10 caracteres y 3 tipos.
-- Sesión con cookie `__Host-`, HttpOnly, Secure, SameSite=Strict; caduca a los 30 min sin uso y a las 8 h; cambiar la contraseña cierra las demás sesiones.
-- Token CSRF en todos los formularios; permisos comprobados en el servidor para cada acción.
-- Subidas: solo PNG/JPG/WEBP/GIF verificados por contenido, nombre aleatorio, `uploads/` sin ejecución de código.
-- `data/` e `inc/` inaccesibles desde la web; CSP estricta; HTTPS forzado.
-- `robots.txt` con `Disallow: /` más cabecera `X-Robots-Tag: noindex` y meta robots.
-- Registro de accesos en `data/auth.log`.
+**Fuerza bruta sin bloqueos abusivos**
+- Contador por IP + cuenta: 5 fallos → bloqueo de 5 min, que se duplica en cada reincidencia (máx. **1 h**).
+- Contador por IP: 30 fallos con cualquier usuario → mismo bloqueo (frena barridos desde una dirección).
+- **Navegador de confianza**: tras entrar correctamente, el navegador recibe una cookie firmada (90 días). En ese navegador el usuario tiene su propio contador y no le afecta el límite por IP, así que un tercero (aunque comparta la IP de la oficina) **no puede bloquearle**.
+- Ataque distribuido contra una cuenta (20 fallos desde varias IP en 15 min): la cuenta **no se bloquea**; los navegadores no reconocidos pasan a 1 intento cada 10 s y se **avisa por correo a los administradores** (máx. 1 aviso por hora).
+- Respuesta genérica, retardo fijo de 1 s por fallo y registro en `auth.log` (carpeta de datos).
+- Opcional: `ADMIN_ALLOW_IPS` en `inc/settings.php` limita el panel a IP/rangos concretos (el kiosco sigue público).
+- Protección en el servidor (recomendada): en cPanel, *Seguridad → Bloqueador de IP* para IP concretas; si el hosting tiene **cPHulk** o **ModSecurity**, actívelos. En un VPS con fail2ban se puede usar `auth.log` con el patrón `\t<HOST>\t[^\t]*\tlogin_fail`.
+
+**Subidas de imágenes**
+- PNG/JPG/WEBP/GIF: se vuelven a codificar con GD (se eliminan metadatos y cualquier contenido oculto; un GIF animado queda en su primer fotograma).
+- SVG: se reconstruyen con una **lista cerrada** de etiquetas y atributos (sin scripts, eventos, `foreignObject`, SVG anidados, enlaces externos ni `data:`); si el servidor tiene Imagick con soporte SVG, se convierten a **PNG**.
+- `uploads/` solo sirve imágenes, sin ejecución de código y con CSP `sandbox`.
+
+**Ventanas del kiosco (iframes)**
+- Solo `https://` y solo dominios de la **lista de dominios permitidos** (sección Iconos). Nunca el propio kiosco, IP ni nombres de red local. Se comprueba al guardar, al servir la configuración y en el navegador.
+- La CSP de la página del kiosco se genera con esa misma lista.
+- `sandbox` sin `allow-top-navigation`; `allow-same-origin` solo en los iconos que lo tengan activado (por defecto: newsletter y vídeo, que lo necesitan; la web de Bezares va aislada; si alguna página no funcionara bien, actívelo en su icono).
+
+**Datos y sesiones**
+- Fuera de `public_html`, permisos 700/600, escrituras atómicas (archivo temporal + renombrado).
+- Contraseñas con Argon2id/bcrypt (mín. 10 caracteres y 3 tipos). Sesión `__Host-`, HttpOnly, Secure, SameSite=Strict, caducidad 30 min sin uso / 8 h; cambiar la contraseña cierra las demás sesiones.
+- Token CSRF en todos los formularios; permisos comprobados en el servidor; CSP estricta; HTTPS forzado; `robots.txt` + `noindex`.
+
+**Recuperación de contraseña**
+- Enlace de un solo uso, 30 min, ligado a la contraseña actual (si cambia por otra vía, el enlace deja de valer).
+- Abrir enlaces caducados no bloquea; solo los envíos del formulario con enlace no válido.
+- La contraseña nueva se guarda antes de invalidar el enlace: si falla la escritura, el enlace sigue sirviendo.
 
 ## Notas
 

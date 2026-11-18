@@ -13,56 +13,163 @@ ini_set('display_errors', '0');
 error_reporting(E_ALL);
 
 /* ---------------------------------------------------------------- *
- *  Almacenamiento JSON con bloqueo de archivo
+ *  Carpeta de datos (fuera de la web) y almacenamiento JSON
  * ---------------------------------------------------------------- */
+
+/** Directorio personal de la cuenta del hosting (p. ej. /home/USUARIO en cPanel). */
+function account_home(): string
+{
+    if (function_exists('posix_getpwuid') && function_exists('posix_geteuid')) {
+        $pw = @posix_getpwuid(posix_geteuid());
+        if (!empty($pw['dir']) && is_dir($pw['dir'])) {
+            return rtrim($pw['dir'], '/');
+        }
+    }
+    $h = getenv('HOME');
+    if ($h && is_dir($h)) {
+        return rtrim($h, '/');
+    }
+    // Último recurso: la carpeta que contiene el sitio
+    return dirname(APP_ROOT);
+}
+
+function data_fail(string $detail): void
+{
+    error_log('[welcome-kiosk] ' . $detail);
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=utf-8');
+    exit("Error de configuración: no se puede usar la carpeta de datos.\n"
+       . "Revise DATA_DIR en inc/settings.php y los permisos (el detalle está en el registro de errores de PHP).");
+}
+
+/** Ruta absoluta de la carpeta de datos; la crea (0700) y traslada los datos antiguos si hace falta. */
+function data_dir(): string
+{
+    static $dir = null;
+    if ($dir !== null) {
+        return $dir;
+    }
+    $d = DATA_DIR !== '' ? rtrim(DATA_DIR, '/') : account_home() . '/welcome-kiosk-data';
+    if (!is_dir($d) && !@mkdir($d, 0700, true) && !is_dir($d)) {
+        data_fail("No se puede crear la carpeta de datos {$d}");
+    }
+    if (!is_writable($d)) {
+        data_fail("Sin permiso de escritura en {$d}");
+    }
+    @chmod($d, 0700);
+    if (!is_file($d . '/.htaccess')) { // por si la carpeta acabara dentro de la web
+        @file_put_contents($d . '/.htaccess', "Require all denied\n");
+    }
+    $dir = realpath($d) ?: $d;
+    migrate_legacy_data($dir);
+    return $dir;
+}
+
+/** true si la carpeta de datos está dentro del sitio web (desaconsejado). */
+function data_dir_is_public(): bool
+{
+    $data = realpath(data_dir()) ?: data_dir();
+    foreach ([APP_ROOT, $_SERVER['DOCUMENT_ROOT'] ?? ''] as $root) {
+        $r = $root !== '' ? realpath($root) : false;
+        if ($r && str_starts_with($data . '/', rtrim($r, '/') . '/')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** Traslada los datos de la antigua carpeta data/ del sitio a la nueva ubicación (una sola vez). */
+function migrate_legacy_data(string $dir): void
+{
+    $old = APP_ROOT . '/data';
+    $oldReal = realpath($old);
+    if (!$oldReal || $oldReal === $dir || !is_file($old . '/users.json') || is_file($dir . '/users.json')) {
+        return;
+    }
+    foreach (['users.json', 'config.json', 'attempts.json', 'resets.json', 'auth.log', 'auth.log.1', 'secret.key'] as $f) {
+        if (is_file("$old/$f") && !is_file("$dir/$f")) {
+            if (@copy("$old/$f", "$dir/$f")) {
+                @chmod("$dir/$f", 0600);
+                @unlink("$old/$f");
+            }
+        }
+    }
+    error_log("[welcome-kiosk] Datos trasladados de {$old} a {$dir}");
+}
 
 function data_path(string $name): string
 {
-    if (!is_dir(DATA_DIR)) {
-        @mkdir(DATA_DIR, 0750, true);
-    }
-    return rtrim(DATA_DIR, '/') . '/' . $name;
+    return data_dir() . '/' . $name;
 }
 
 function json_read(string $file, array $default = []): array
 {
-    if (!is_file($file)) {
+    // Las escrituras son atómicas (archivo temporal + rename), así que leer no necesita bloqueo.
+    $raw = is_file($file) ? @file_get_contents($file) : false;
+    if ($raw === false || $raw === '') {
         return $default;
     }
-    $fp = fopen($file, 'r');
-    if (!$fp) {
-        return $default;
-    }
-    flock($fp, LOCK_SH);
-    $raw = stream_get_contents($fp);
-    flock($fp, LOCK_UN);
-    fclose($fp);
-    $data = json_decode((string)$raw, true);
+    $data = json_decode($raw, true);
     return is_array($data) ? $data : $default;
 }
 
-/** Lee-modifica-escribe de forma atómica. $fn recibe el array por referencia. */
+/**
+ * Lee-modifica-escribe de forma atómica: bloqueo exclusivo en un archivo .lock, escritura en un
+ * temporal y rename. Si $fn lanza una excepción o la escritura falla, el archivo original no cambia.
+ */
 function json_update(string $file, callable $fn, array $default = [])
 {
-    $fp = fopen($file, 'c+');
-    if (!$fp) {
+    $lock = @fopen($file . '.lock', 'c');
+    if (!$lock) {
         throw new RuntimeException('No se puede escribir en la carpeta de datos. Revise los permisos.');
     }
-    @chmod($file, 0640);
-    flock($fp, LOCK_EX);
-    $raw = stream_get_contents($fp);
-    $data = $raw !== '' ? json_decode((string)$raw, true) : null;
-    if (!is_array($data)) {
-        $data = $default;
+    flock($lock, LOCK_EX);
+    try {
+        $data = json_read($file, $default);
+        $result = $fn($data);
+        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $tmp = $file . '.tmp' . bin2hex(random_bytes(4));
+        if (@file_put_contents($tmp, $json) !== strlen($json)) {
+            @unlink($tmp);
+            throw new RuntimeException('No se pudo guardar el archivo de datos (¿disco lleno o sin permisos?).');
+        }
+        @chmod($tmp, 0600);
+        if (!@rename($tmp, $file)) {
+            @unlink($tmp);
+            throw new RuntimeException('No se pudo guardar el archivo de datos.');
+        }
+        return $result;
+    } finally {
+        flock($lock, LOCK_UN);
+        fclose($lock);
     }
-    $result = $fn($data);
-    ftruncate($fp, 0);
-    rewind($fp);
-    fwrite($fp, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    fflush($fp);
-    flock($fp, LOCK_UN);
-    fclose($fp);
-    return $result;
+}
+
+/** Clave secreta de la instalación (para firmar la marca de navegador de confianza). */
+function app_secret(): string
+{
+    static $k = null;
+    if ($k !== null) {
+        return $k;
+    }
+    $f = data_path('secret.key');
+    $k = is_file($f) ? trim((string)@file_get_contents($f)) : '';
+    if (strlen($k) < 64) {
+        $fp = @fopen($f, 'x'); // creación exclusiva: si dos peticiones llegan a la vez, gana una
+        if ($fp) {
+            $k = bin2hex(random_bytes(32));
+            fwrite($fp, $k);
+            fclose($fp);
+            @chmod($f, 0600);
+        } else {
+            usleep(100000);
+            $k = trim((string)@file_get_contents($f));
+            if (strlen($k) < 64) {
+                data_fail('secret.key vacío o dañado: bórrelo para que se regenere');
+            }
+        }
+    }
+    return $k;
 }
 
 /* ---------------------------------------------------------------- *
@@ -156,11 +263,26 @@ function email_valid(string $e): bool
     return $e === '' || (strlen($e) <= 100 && filter_var($e, FILTER_VALIDATE_EMAIL) !== false);
 }
 
-/** Envía el correo con el enlace de recuperación. Devuelve false si el servidor no lo acepta. */
+/** Envía un correo de texto. Devuelve false si el servidor no lo acepta. */
+function send_mail(string $to, string $subject, string $body): bool
+{
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n]/', $to)) {
+        return false;
+    }
+    $subj = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+    $fromName = '=?UTF-8?B?' . base64_encode(MAIL_FROM_NAME) . '?=';
+    $headers = "From: {$fromName} <" . MAIL_FROM . ">\r\n"
+             . "MIME-Version: 1.0\r\n"
+             . "Content-Type: text/plain; charset=UTF-8\r\n"
+             . "Content-Transfer-Encoding: 8bit\r\n"
+             . "Auto-Submitted: auto-generated\r\n";
+    return @mail($to, $subj, $body, $headers, '-f' . MAIL_FROM);
+}
+
+/** Envía el correo con el enlace de recuperación. */
 function send_reset_mail(string $to, string $username, string $link): bool
 {
     $minutes = (int)(RESET_TTL / 60);
-    $subject = '=?UTF-8?B?' . base64_encode('Welcome Bezares · Cambiar contraseña / Reset password') . '?=';
     $body = "Hola {$username}:\r\n\r\n"
           . "Se ha solicitado cambiar la contraseña del panel del kiosco welcome.bezares.com.\r\n"
           . "Abra este enlace (válido {$minutes} minutos, un solo uso):\r\n\r\n{$link}\r\n\r\n"
@@ -168,13 +290,7 @@ function send_reset_mail(string $to, string $username, string $link): bool
           . "---\r\n"
           . "A password reset was requested for the welcome.bezares.com kiosk panel.\r\n"
           . "Open the link above within {$minutes} minutes. If it wasn't you, ignore this email.\r\n";
-    $fromName = '=?UTF-8?B?' . base64_encode(MAIL_FROM_NAME) . '?=';
-    $headers = "From: {$fromName} <" . MAIL_FROM . ">\r\n"
-             . "MIME-Version: 1.0\r\n"
-             . "Content-Type: text/plain; charset=UTF-8\r\n"
-             . "Content-Transfer-Encoding: 8bit\r\n"
-             . "Auto-Submitted: auto-generated\r\n";
-    return @mail($to, $subject, $body, $headers, '-f' . MAIL_FROM);
+    return send_mail($to, 'Welcome Bezares · Cambiar contraseña / Reset password', $body);
 }
 
 function password_make(string $plain): string
@@ -232,7 +348,7 @@ function session_boot(): void
     }
     $dir = data_path('sessions');
     if (!is_dir($dir)) {
-        @mkdir($dir, 0750, true);
+        @mkdir($dir, 0700, true);
     }
     if (is_dir($dir) && is_writable($dir)) {
         session_save_path($dir);
@@ -366,70 +482,253 @@ function client_ip(): string
     return (string)($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
 }
 
-function throttle_keys(string $ip, string $user): array
+/** Comprueba si una IP está en una lista de IP o rangos CIDR (IPv4 e IPv6). */
+function ip_in_list(string $ip, array $list): bool
 {
-    $keys = ['ip:' . $ip => LOGIN_MAX_IP];
-    if ($user !== '') {
-        $keys['user:' . mb_strtolower(mb_substr($user, 0, 64))] = LOGIN_MAX_USER;
+    $bin = @inet_pton($ip);
+    if ($bin === false) {
+        return false;
     }
-    return $keys;
+    foreach ($list as $entry) {
+        [$net, $bits] = array_pad(explode('/', trim((string)$entry), 2), 2, null);
+        $nbin = @inet_pton((string)$net);
+        if ($nbin === false || strlen($nbin) !== strlen($bin)) {
+            continue;
+        }
+        $bits = $bits === null ? strlen($bin) * 8 : max(0, min(strlen($bin) * 8, (int)$bits));
+        $bytes = intdiv($bits, 8);
+        $rem = $bits % 8;
+        if (substr($bin, 0, $bytes) !== substr($nbin, 0, $bytes)) {
+            continue;
+        }
+        if ($rem === 0) {
+            return true;
+        }
+        $mask = chr((0xFF << (8 - $rem)) & 0xFF);
+        if ((($bin[$bytes] ^ $nbin[$bytes]) & $mask) === "\0") {
+            return true;
+        }
+    }
+    return false;
 }
 
-/** Segundos que faltan para poder volver a intentarlo (0 = permitido). */
-function throttle_wait(string $ip, string $user): int
+/** Corta la petición si ADMIN_ALLOW_IPS está definido y la IP no figura en él. */
+function require_allowed_ip(): void
+{
+    if (ADMIN_ALLOW_IPS && !ip_in_list(client_ip(), ADMIN_ALLOW_IPS)) {
+        auth_log('ip_not_allowed');
+        http_response_code(403);
+        header('Content-Type: text/plain; charset=utf-8');
+        exit('Acceso no permitido desde esta red.');
+    }
+}
+
+/* --- Contadores genéricos con bloqueo progresivo --- */
+
+/** Segundos que faltan para que se levante el bloqueo de cualquiera de las claves (0 = permitido). */
+function throttle_wait(array $keys): int
 {
     $d = json_read(data_path('attempts.json'));
     $now = time();
     $wait = 0;
-    foreach (array_keys(throttle_keys($ip, $user)) as $k) {
-        $until = (int)($d[$k]['lock_until'] ?? 0);
-        if ($until > $now) {
-            $wait = max($wait, $until - $now);
-        }
+    foreach ($keys as $k) {
+        $wait = max($wait, (int)($d[$k]['lock_until'] ?? 0) - $now);
     }
-    return $wait;
+    return max(0, $wait);
 }
 
-function throttle_fail(string $ip, string $user): void
+/** Limpieza y suma de un fallo a una entrada (dentro de json_update). */
+function throttle_bump(array &$d, string $k, int $max, int $now): void
 {
-    json_update(data_path('attempts.json'), function (array &$d) use ($ip, $user) {
+    $e = $d[$k] ?? ['fails' => 0, 'first' => $now, 'lock_until' => 0, 'locks' => 0];
+    if ($now - $e['first'] > LOGIN_WINDOW) {
+        $e['fails'] = 0;
+        $e['first'] = $now;
+        if (($e['lock_until'] ?? 0) < $now - LOGIN_LOCK_MAX) {
+            $e['locks'] = 0; // tras una hora tranquila, la escalada vuelve a empezar
+        }
+    }
+    $e['fails']++;
+    $e['last'] = $now;
+    if ($e['fails'] >= $max) {
+        $e['lock_until'] = $now + min(LOGIN_LOCK * (2 ** min($e['locks'], 10)), LOGIN_LOCK_MAX);
+        $e['locks']++;
+        $e['fails'] = 0;
+        $e['first'] = $now;
+    }
+    $d[$k] = $e;
+}
+
+function throttle_gc(array &$d, int $now): void
+{
+    foreach ($d as $k => $v) {
+        if (($v['lock_until'] ?? 0) < $now && ($v['soft_until'] ?? 0) < $now && ($v['last'] ?? 0) < $now - 2 * LOGIN_LOCK_MAX) {
+            unset($d[$k]);
+        }
+    }
+    if (count($d) > 5000) { // tope de tamaño
+        uasort($d, fn($a, $b) => ($a['last'] ?? 0) <=> ($b['last'] ?? 0));
+        $d = array_slice($d, -4000, null, true);
+    }
+}
+
+/** Registra un fallo en cada clave: [clave => máximo de fallos]. */
+function throttle_fail(array $limits): void
+{
+    json_update(data_path('attempts.json'), function (array &$d) use ($limits) {
         $now = time();
-        // Limpieza de entradas antiguas
-        foreach ($d as $k => $v) {
-            if (($v['lock_until'] ?? 0) < $now && ($v['last'] ?? 0) < $now - 2 * LOGIN_LOCK_MAX) {
-                unset($d[$k]);
-            }
-        }
-        if (count($d) > 5000) { // tope de tamaño
-            uasort($d, fn($a, $b) => ($a['last'] ?? 0) <=> ($b['last'] ?? 0));
-            $d = array_slice($d, -4000, null, true);
-        }
-        foreach (throttle_keys($ip, $user) as $k => $max) {
-            $e = $d[$k] ?? ['fails' => 0, 'first' => $now, 'lock_until' => 0, 'locks' => 0];
-            if ($now - $e['first'] > LOGIN_WINDOW) {
-                $e['fails'] = 0;
-                $e['first'] = $now;
-            }
-            $e['fails']++;
-            $e['last'] = $now;
-            if ($e['fails'] >= $max) {
-                $e['lock_until'] = $now + min(LOGIN_LOCK * (2 ** $e['locks']), LOGIN_LOCK_MAX);
-                $e['locks']++;
-                $e['fails'] = 0;
-                $e['first'] = $now;
-            }
-            $d[$k] = $e;
+        throttle_gc($d, $now);
+        foreach ($limits as $k => $max) {
+            throttle_bump($d, $k, (int)$max, $now);
         }
     });
 }
 
-function throttle_clear(string $ip, string $user): void
+function throttle_clear(array $keys): void
 {
-    json_update(data_path('attempts.json'), function (array &$d) use ($ip, $user) {
-        foreach (array_keys(throttle_keys($ip, $user)) as $k) {
+    json_update(data_path('attempts.json'), function (array &$d) use ($keys) {
+        foreach ($keys as $k) {
             unset($d[$k]);
         }
     });
+}
+
+/* --- Inicio de sesión --- */
+
+/** Clave canónica de cuenta: el nombre de usuario real si existe (aunque se entre con el correo). */
+function login_account_key(string $id): string
+{
+    $u = user_find_login($id);
+    return mb_strtolower($u ? $u['username'] : mb_substr($id, 0, 100));
+}
+
+/**
+ * Claves de bloqueo de un intento. Los navegadores de confianza tienen su propio contador por IP+cuenta y
+ * no cuentan para el límite por IP: así un atacante (aunque comparta la IP de la oficina) no puede
+ * bloquear a los usuarios en los equipos donde ya entraron.
+ */
+function login_keys(string $ip, string $acct, bool $trusted): array
+{
+    if ($trusted) {
+        return ['pair:dev:' . $ip . '|' . $acct => LOGIN_MAX_PAIR];
+    }
+    return [
+        'pair:anon:' . $ip . '|' . $acct => LOGIN_MAX_PAIR,
+        'ip:' . $ip => LOGIN_MAX_IP,
+    ];
+}
+
+/**
+ * Espera necesaria antes de un intento de login: bloqueos por IP/IP+usuario y, si la cuenta está en
+ * modo lento por un ataque distribuido, el intervalo mínimo entre intentos (salvo navegador de confianza).
+ */
+function login_wait(string $ip, string $acct, bool $trusted): int
+{
+    $wait = throttle_wait(array_keys(login_keys($ip, $acct, $trusted)));
+    if (!$trusted) {
+        $e = json_read(data_path('attempts.json'))['acct:' . $acct] ?? [];
+        if (($e['soft_until'] ?? 0) > time()) {
+            $wait = max($wait, (int)($e['last_try'] ?? 0) + LOGIN_SOFT_DELAY - time());
+        }
+    }
+    return max(0, $wait);
+}
+
+/** Registra un fallo de login. Devuelve true si procede avisar a los administradores. */
+function login_fail(string $ip, string $acct, bool $trusted): bool
+{
+    return (bool)json_update(data_path('attempts.json'), function (array &$d) use ($ip, $acct, $trusted) {
+        $now = time();
+        throttle_gc($d, $now);
+        foreach (login_keys($ip, $acct, $trusted) as $k => $max) {
+            throttle_bump($d, $k, $max, $now);
+        }
+        // Contador por cuenta (todas las IP): nunca bloquea, solo activa el modo lento y el aviso.
+        $k = 'acct:' . $acct;
+        $e = $d[$k] ?? ['fails' => 0, 'first' => $now];
+        if ($now - $e['first'] > LOGIN_WINDOW) {
+            $e['fails'] = 0;
+            $e['first'] = $now;
+        }
+        $e['fails']++;
+        $e['last'] = $now;
+        if (!$trusted) {
+            $e['last_try'] = $now;
+        }
+        $alert = false;
+        if ($e['fails'] >= LOGIN_USER_SOFT) {
+            $e['soft_until'] = $now + LOGIN_WINDOW;
+            if (($e['alerted'] ?? 0) < $now - 3600) {
+                $e['alerted'] = $now;
+                $alert = true;
+            }
+        }
+        $d[$k] = $e;
+        return $alert;
+    });
+}
+
+/** Tras un login correcto se borra solo el contador IP+cuenta usado (no el de la IP ni el de la otra categoría). */
+function login_success(string $ip, string $acct, bool $trusted): void
+{
+    throttle_clear(['pair:' . ($trusted ? 'dev' : 'anon') . ':' . $ip . '|' . $acct]);
+}
+
+/** Avisa por correo a los administradores de un posible ataque contra una cuenta. */
+function alert_admins(string $acct): void
+{
+    $sent = 0;
+    foreach (users_all() as $u) {
+        $to = user_email($u);
+        if ($u['role'] === 'admin' && $to !== '') {
+            $body = "Se han producido " . LOGIN_USER_SOFT . " o más intentos fallidos de acceso a la cuenta «{$acct}» "
+                  . "del panel welcome.bezares.com en los últimos " . (LOGIN_WINDOW / 60) . " minutos, desde una o varias IP.\r\n\r\n"
+                  . "La cuenta NO se ha bloqueado: los navegadores donde ya se inició sesión siguen entrando con normalidad y "
+                  . "el resto solo puede intentarlo una vez cada " . LOGIN_SOFT_DELAY . " segundos.\r\n\r\n"
+                  . "Revise el registro auth.log de la carpeta de datos. Si el ataque continúa, bloquee las IP en cPanel "
+                  . "(Bloqueador de IP / cPHulk) o limite el panel con ADMIN_ALLOW_IPS.\r\n";
+            $sent += (int)send_mail($to, 'Welcome Bezares · Aviso de seguridad: intentos de acceso fallidos', $body);
+        }
+    }
+    auth_log('alert_admins:' . $sent, $acct);
+}
+
+/* --- Navegador de confianza (cookie firmada tras un login correcto) --- */
+
+function device_cookie_name(): string
+{
+    return is_https() ? '__Host-WKDEV' : 'WKDEV';
+}
+
+function b64url(string $s): string
+{
+    return rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
+}
+
+function device_issue(string $username): void
+{
+    $exp = time() + TRUSTED_DEVICE_DAYS * 86400;
+    $payload = b64url(mb_strtolower($username)) . '.' . $exp;
+    $val = $payload . '.' . hash_hmac('sha256', $payload, app_secret());
+    setcookie(device_cookie_name(), $val, [
+        'expires' => $exp, 'path' => '/', 'secure' => is_https(), 'httponly' => true, 'samesite' => 'Strict',
+    ]);
+}
+
+/** true si este navegador ya inició sesión correctamente con esa cuenta. */
+function device_trusted(string $acct): bool
+{
+    $v = (string)($_COOKIE[device_cookie_name()] ?? '');
+    $p = explode('.', $v);
+    if (count($p) !== 3 || !ctype_digit($p[1]) || (int)$p[1] < time()) {
+        return false;
+    }
+    $payload = $p[0] . '.' . $p[1];
+    if (!hash_equals(hash_hmac('sha256', $payload, app_secret()), $p[2])) {
+        return false;
+    }
+    $u = base64_decode(strtr($p[0], '-_', '+/'), true);
+    return $u !== false && hash_equals($u, mb_strtolower($acct));
 }
 
 function auth_log(string $event, string $user = ''): void
@@ -438,12 +737,16 @@ function auth_log(string $event, string $user = ''): void
     if (is_file($file) && filesize($file) > 1024 * 1024) {
         @rename($file, $file . '.1');
     }
-    $line = sprintf("%s\t%s\t%s\t%s\n", date('c'), client_ip(), str_replace(["\t", "\n", "\r"], ' ', mb_substr($user, 0, 64)), $event);
+    $line = sprintf("%s\t%s\t%s\t%s\n", date('c'), client_ip(), str_replace(["\t", "\n", "\r"], ' ', mb_substr($user, 0, 100)), $event);
     @file_put_contents($file, $line, FILE_APPEND | LOCK_EX);
+    @chmod($file, 0600);
 }
 
 /* ---------------------------------------------------------------- *
  *  Subida de imágenes
+ *  - Mapas de bits: se vuelven a codificar con GD (elimina metadatos y contenido oculto).
+ *  - SVG: se depuran con una lista cerrada de etiquetas y atributos y, si el servidor tiene
+ *    Imagick con soporte SVG, se convierten a PNG.
  * ---------------------------------------------------------------- */
 
 /** Devuelve la ruta relativa 'uploads/...' o null si no se envió archivo. */
@@ -462,62 +765,229 @@ function handle_upload(string $field, string $prefix): ?string
     if ($f['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) {
         throw new RuntimeException('No se pudo subir el archivo.');
     }
-    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($f['tmp_name']);
-    $map = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp', 'image/svg+xml' => 'svg'];
-    $isSvg = $mime === 'image/svg+xml'
-          || (in_array($mime, ['text/plain', 'text/xml', 'application/xml', 'text/html'], true)
-              && preg_match('/\.svg$/i', (string)$f['name']));
-    if ($isSvg) {
-        $mime = 'image/svg+xml';
-        svg_check((string)file_get_contents($f['tmp_name']));
-    } elseif (!isset($map[$mime]) || @getimagesize($f['tmp_name']) === false) {
-        throw new RuntimeException('Formato no admitido. Use SVG, PNG, JPG, WEBP o GIF.');
-    }
     if (!is_dir(UPLOAD_DIR)) {
         @mkdir(UPLOAD_DIR, 0755, true);
     }
-    $name = $prefix . '-' . bin2hex(random_bytes(8)) . '.' . $map[$mime];
-    if (!move_uploaded_file($f['tmp_name'], UPLOAD_DIR . '/' . $name)) {
+
+    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($f['tmp_name']);
+    $isSvg = $mime === 'image/svg+xml'
+          || (in_array($mime, ['text/plain', 'text/xml', 'application/xml', 'text/html'], true)
+              && preg_match('/\.svg$/i', (string)$f['name']));
+
+    if ($isSvg) {
+        $clean = svg_sanitize((string)file_get_contents($f['tmp_name']));
+        $png = SVG_TO_PNG ? svg_to_png($clean) : null;
+        [$data, $ext] = $png !== null ? [$png, 'png'] : [$clean, 'svg'];
+    } else {
+        $map = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
+        $info = @getimagesize($f['tmp_name']);
+        if (!isset($map[$mime]) || $info === false || $info[0] < 1 || $info[1] < 1) {
+            throw new RuntimeException('Formato no admitido. Use SVG, PNG, JPG, WEBP o GIF.');
+        }
+        if ($info[0] * $info[1] > 40000000) { // evita imágenes gigantes que agoten la memoria
+            throw new RuntimeException('La imagen tiene demasiados píxeles (máx. 40 megapíxeles).');
+        }
+        [$data, $ext] = raster_reencode($f['tmp_name'], $mime, $map[$mime]);
+    }
+
+    $name = $prefix . '-' . bin2hex(random_bytes(8)) . '.' . $ext;
+    if (@file_put_contents(UPLOAD_DIR . '/' . $name, $data) !== strlen($data)) {
+        @unlink(UPLOAD_DIR . '/' . $name);
         throw new RuntimeException('No se pudo guardar la imagen. Revise los permisos de /uploads.');
     }
     @chmod(UPLOAD_DIR . '/' . $name, 0644);
     return 'uploads/' . $name;
 }
 
-/** Rechaza SVG con código activo o referencias externas. */
-function svg_check(string $xml): void
+/**
+ * Vuelve a codificar un mapa de bits con GD. PNG/GIF → PNG (conserva transparencia; un GIF animado
+ * queda en su primer fotograma), JPEG → JPEG, WEBP → WEBP. Devuelve [bytes, extensión].
+ * Si GD no está disponible, se conserva el archivo original (ya validado como imagen).
+ */
+function raster_reencode(string $file, string $mime, string $ext): array
 {
-    $bad = 'El SVG contiene elementos no permitidos (scripts, enlaces externos o contenido incrustado).';
-    if ($xml === '' || stripos($xml, '<!ENTITY') !== false || stripos($xml, '<!DOCTYPE') !== false) {
-        throw new RuntimeException($bad);
+    if (!extension_loaded('gd')) {
+        return [(string)file_get_contents($file), $ext];
     }
-    $prev = libxml_use_internal_errors(true);
-    $dom = new DOMDocument();
-    $ok = $dom->loadXML($xml, LIBXML_NONET);
-    libxml_clear_errors();
-    libxml_use_internal_errors($prev);
-    if (!$ok || !$dom->documentElement || strtolower($dom->documentElement->localName) !== 'svg') {
-        throw new RuntimeException('El archivo no es un SVG válido.');
+    $img = match ($mime) {
+        'image/png'  => @imagecreatefrompng($file),
+        'image/gif'  => @imagecreatefromgif($file),
+        'image/jpeg' => @imagecreatefromjpeg($file),
+        'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($file) : false,
+        default      => false,
+    };
+    if (!$img) {
+        throw new RuntimeException('La imagen está dañada o no se puede procesar.');
     }
-    foreach ((new DOMXPath($dom))->query('//*') as $el) {
-        $name = strtolower($el->localName);
-        if (in_array($name, ['script', 'foreignobject', 'iframe', 'embed', 'object', 'handler', 'listener'], true)) {
-            throw new RuntimeException($bad);
+    ob_start();
+    if ($mime === 'image/jpeg') {
+        imagejpeg($img, null, 90);
+        $out = 'jpg';
+    } elseif ($mime === 'image/webp' && function_exists('imagewebp')) {
+        imagepalettetotruecolor($img);
+        imagealphablending($img, false);
+        imagesavealpha($img, true);
+        imagewebp($img, null, 90);
+        $out = 'webp';
+    } else {
+        imagepalettetotruecolor($img);
+        imagealphablending($img, false);
+        imagesavealpha($img, true);
+        imagepng($img, null, 6);
+        $out = 'png';
+    }
+    $data = (string)ob_get_clean();
+    imagedestroy($img);
+    if ($data === '') {
+        throw new RuntimeException('No se pudo procesar la imagen.');
+    }
+    return [$data, $out];
+}
+
+/** Convierte un SVG (ya depurado) a PNG con Imagick si el servidor lo permite; si no, null. */
+function svg_to_png(string $svg): ?string
+{
+    if (!class_exists('Imagick') || !in_array('SVG', Imagick::queryFormats('SVG'), true)) {
+        return null;
+    }
+    try {
+        $im = new Imagick();
+        $im->setBackgroundColor(new ImagickPixel('transparent'));
+        $im->setResolution(288, 288); // ~4x para que se vea nítido a pantalla completa
+        $im->readImageBlob($svg);
+        if ($im->getImageWidth() > 3000) {
+            $im->resizeImage(3000, 0, Imagick::FILTER_LANCZOS, 1);
         }
-        foreach ($el->attributes as $a) {
-            $an = strtolower($a->localName);
-            $av = strtolower(preg_replace('/\s+/', '', $a->value));
-            if (str_starts_with($an, 'on')
-                // enlaces con esquema (http:, //, etc.) salvo imágenes incrustadas; las rutas relativas no se cargan en <img>
-                || ($an === 'href' && preg_match('#^([a-z][a-z0-9+.-]*:|//)#', $av) && !str_starts_with($av, 'data:image/'))
-                || str_contains($av, 'javascript:')) {
-                throw new RuntimeException($bad);
+        $im->setImageFormat('png32');
+        $png = $im->getImageBlob();
+        $im->clear();
+        return $png !== '' ? $png : null;
+    } catch (Throwable $e) {
+        error_log('[welcome-kiosk] SVG→PNG: ' . $e->getMessage());
+        return null;
+    }
+}
+
+/** Etiquetas SVG permitidas (lista cerrada). Todo lo demás se elimina con su contenido. */
+const SVG_TAGS = [
+    'svg', 'g', 'defs', 'title', 'desc', 'symbol', 'use', 'path', 'rect', 'circle', 'ellipse', 'line',
+    'polyline', 'polygon', 'text', 'tspan', 'clippath', 'mask', 'lineargradient', 'radialgradient', 'stop',
+    'pattern', 'style',
+];
+
+/** Atributos SVG permitidos (lista cerrada, en minúsculas). */
+const SVG_ATTRS = [
+    'id', 'class', 'style', 'viewbox', 'version', 'x', 'y', 'width', 'height', 'preserveaspectratio',
+    'd', 'points', 'transform', 'cx', 'cy', 'r', 'rx', 'ry', 'x1', 'y1', 'x2', 'y2', 'dx', 'dy', 'rotate',
+    'fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-width', 'stroke-opacity', 'stroke-linecap',
+    'stroke-linejoin', 'stroke-miterlimit', 'stroke-dasharray', 'stroke-dashoffset', 'opacity',
+    'clip-path', 'clip-rule', 'clippathunits', 'mask', 'maskunits', 'maskcontentunits',
+    'offset', 'stop-color', 'stop-opacity', 'gradientunits', 'gradienttransform', 'spreadmethod', 'fx', 'fy',
+    'patternunits', 'patterncontentunits', 'patterntransform',
+    'font-family', 'font-size', 'font-weight', 'font-style', 'text-anchor', 'letter-spacing',
+    'word-spacing', 'dominant-baseline', 'alignment-baseline', 'baseline-shift', 'text-decoration',
+    'display', 'visibility', 'overflow', 'color', 'enable-background', 'space', 'href', 'type', 'media',
+];
+
+/** CSS seguro: sin @import, sin url() externas, sin escapes ni expresiones. */
+function svg_css_safe(string $css): bool
+{
+    $c = strtolower($css);
+    if (preg_match('/@import|@font-face|expression\s*\(|javascript:|behavior\s*:|-moz-binding|\\\\|<|&#/', $c)) {
+        return false;
+    }
+    // url(...) solo hacia referencias internas: url(#id)
+    if (preg_match_all('/url\s*\(\s*([\'"]?)\s*([^\'")\s]*)/', $c, $m)) {
+        foreach ($m[2] as $target) {
+            if ($target === '' || $target[0] !== '#') {
+                return false;
             }
         }
     }
-    if (preg_match('/url\(\s*[\'"]?\s*(?!#)[a-z]+:/i', $xml) || stripos($xml, '@import') !== false) {
-        throw new RuntimeException($bad);
+    return true;
+}
+
+/**
+ * Depura un SVG con listas cerradas y devuelve el SVG reconstruido.
+ * Rechaza DOCTYPE/entidades, SVG anidados se eliminan, enlaces solo internos (#id), sin data: URI,
+ * sin comentarios ni instrucciones de proceso. Lanza RuntimeException si el archivo no es un SVG válido.
+ */
+function svg_sanitize(string $xml): string
+{
+    if ($xml === '' || preg_match('/<!DOCTYPE|<!ENTITY/i', $xml)) {
+        throw new RuntimeException('El SVG contiene declaraciones no permitidas (DOCTYPE/ENTITY).');
     }
+    $prev = libxml_use_internal_errors(true);
+    $dom = new DOMDocument();
+    $ok = $dom->loadXML($xml, LIBXML_NONET | LIBXML_NOCDATA | LIBXML_COMPACT);
+    libxml_clear_errors();
+    libxml_use_internal_errors($prev);
+    $root = $ok ? $dom->documentElement : null;
+    if (!$root || strtolower($root->localName) !== 'svg') {
+        throw new RuntimeException('El archivo no es un SVG válido.');
+    }
+
+    $xp = new DOMXPath($dom);
+    // Comentarios e instrucciones de proceso fuera
+    foreach (iterator_to_array($xp->query('//comment() | //processing-instruction()')) as $n) {
+        $n->parentNode->removeChild($n);
+    }
+
+    $walk = function (DOMElement $el, bool $isRoot) use (&$walk) {
+        // Atributos
+        foreach (iterator_to_array($el->attributes) as $a) {
+            $name = strtolower($a->localName);
+            $ns = (string)$a->namespaceURI;
+            $val = trim($a->value);
+            $lv = strtolower(preg_replace('/\s+/', '', $val));
+            $keep = in_array($name, SVG_ATTRS, true)
+                && ($ns === '' || $ns === 'http://www.w3.org/1999/xlink' || $ns === 'http://www.w3.org/XML/1998/namespace');
+            if ($keep && $name === 'href') {
+                $keep = preg_match('/^#[A-Za-z_][\w.\-:]*$/', $val) === 1; // solo referencias internas
+            }
+            if ($keep && $name === 'space') {
+                $keep = $ns === 'http://www.w3.org/XML/1998/namespace';
+            }
+            if ($keep && ($name === 'style' || str_contains($lv, 'url('))) {
+                $keep = svg_css_safe($val);
+            }
+            if ($keep && preg_match('/javascript:|data:|vbscript:/', $lv)) {
+                $keep = false;
+            }
+            if (!$keep) {
+                $el->removeAttributeNode($a);
+            }
+        }
+        // Hijos
+        foreach (iterator_to_array($el->childNodes) as $child) {
+            if ($child instanceof DOMElement) {
+                $tag = strtolower($child->localName);
+                $svgNs = $child->namespaceURI === null || $child->namespaceURI === 'http://www.w3.org/2000/svg';
+                if (!$svgNs || !in_array($tag, SVG_TAGS, true) || $tag === 'svg') { // incluye SVG anidados
+                    $el->removeChild($child);
+                    continue;
+                }
+                if ($tag === 'style') {
+                    if (!svg_css_safe($child->textContent)) {
+                        throw new RuntimeException('El SVG contiene estilos no permitidos (@import, url externas, etc.).');
+                    }
+                    $css = $child->textContent;
+                    while ($child->firstChild) { $child->removeChild($child->firstChild); }
+                    $child->appendChild($child->ownerDocument->createTextNode($css));
+                }
+                $walk($child, false);
+            } elseif (!($child instanceof DOMText)) {
+                $el->removeChild($child); // CDATA ya convertido a texto; cualquier otro nodo fuera
+            }
+        }
+    };
+    $walk($root, true);
+
+    $out = $dom->saveXML($root);
+    if ($out === false || $out === '') {
+        throw new RuntimeException('No se pudo procesar el SVG.');
+    }
+    return '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . $out;
 }
 
 /** Borra un archivo subido (solo dentro de /uploads y con nombre generado por la app). */
@@ -580,7 +1050,7 @@ function post_enum(string $k, array $allowed, string $fallback): string
     return in_array($v, $allowed, true) ? $v : $fallback;
 }
 
-/** Acepta una URL o un código <iframe ...> y devuelve una URL http(s) válida o ''. */
+/** Acepta una URL o un código <iframe ...> y devuelve una URL https válida o ''. */
 function parse_url_or_iframe(string $input): string
 {
     if (stripos($input, '<iframe') !== false && preg_match('/\ssrc\s*=\s*["\']([^"\']+)["\']/i', $input, $m)) {
@@ -590,8 +1060,66 @@ function parse_url_or_iframe(string $input): string
     if (!filter_var($input, FILTER_VALIDATE_URL)) {
         return '';
     }
-    $scheme = strtolower((string)parse_url($input, PHP_URL_SCHEME));
-    return in_array($scheme, ['https', 'http'], true) ? $input : '';
+    return strtolower((string)parse_url($input, PHP_URL_SCHEME)) === 'https' ? $input : '';
+}
+
+/** Lista de dominios que se pueden mostrar en las ventanas del kiosco (texto del administrador → array). */
+function frame_domains_parse(string $text): array
+{
+    $out = [];
+    foreach (preg_split('/[\s,;]+/', strtolower($text)) as $d) {
+        $d = trim($d);
+        if ($d !== '' && preg_match('/^(\*\.)?([a-z0-9-]+\.)+[a-z]{2,}$/', $d)) {
+            $out[] = $d;
+        }
+    }
+    return array_values(array_unique($out));
+}
+
+/** "bezares.com" = ese host exacto; "*.bezares.com" = cualquier subdominio. */
+function host_matches(string $host, array $list): bool
+{
+    $host = strtolower(rtrim($host, '.'));
+    foreach ($list as $d) {
+        if (str_starts_with($d, '*.') ? str_ends_with($host, substr($d, 1)) : $host === $d) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** Hosts del propio kiosco: nunca se incrustan (evita contenido del mismo origen en el iframe). */
+function own_hosts(): array
+{
+    $h = [strtolower((string)parse_url(BASE_URL, PHP_URL_HOST))];
+    if (!empty($_SERVER['HTTP_HOST'])) {
+        $h[] = strtolower(preg_replace('/:\d+$/', '', (string)$_SERVER['HTTP_HOST']));
+    }
+    return array_values(array_unique(array_filter($h)));
+}
+
+/** Motivo por el que una URL no se puede incrustar, o null si es válida. */
+function frame_url_problem(string $url, array $domains): ?string
+{
+    $p = parse_url($url);
+    $host = strtolower((string)($p['host'] ?? ''));
+    if (($p['scheme'] ?? '') !== 'https' || $host === '') {
+        return 'Solo se admiten direcciones https://.';
+    }
+    if (isset($p['user']) || isset($p['pass']) || isset($p['port'])) {
+        return 'La dirección no puede llevar usuario, contraseña ni puerto.';
+    }
+    if (filter_var(trim($host, '[]'), FILTER_VALIDATE_IP) || $host === 'localhost'
+        || preg_match('/\.(local|localhost|internal|lan|home|corp|intranet)$/', $host) || !str_contains($host, '.')) {
+        return 'No se permiten direcciones IP ni nombres de red local.';
+    }
+    if (in_array($host, own_hosts(), true)) {
+        return 'No se puede incrustar el propio kiosco.';
+    }
+    if (!host_matches($host, $domains)) {
+        return 'El dominio ' . $host . ' no está en la lista de dominios permitidos (sección Iconos).';
+    }
+    return null;
 }
 
 function youtube_id(string $url): string

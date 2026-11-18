@@ -23,6 +23,10 @@ return [
     'bg_pulse_scale'     => 1.05,       // 1.00 = sin pulso
     'bg_pulse_duration'  => 2.4,        // segundos por latido
     'popup_idle_close'   => 0,          // segundos; 0 = desactivado
+    // Dominios que se pueden mostrar en las ventanas del kiosco ("*.dominio" = subdominios).
+    // El propio kiosco (welcome.bezares.com) nunca se puede incrustar aunque encaje en la lista.
+    'frame_domains'      => "bezares.com\n*.bezares.com\nwww.youtube-nocookie.com",
+
 
     'icons' => [
         [
@@ -32,6 +36,7 @@ return [
             'display' => 'fullscreen', 'width' => '100%', 'height' => '100%',
             'close_text' => 'CERRAR / CLOSE', 'close_bg' => '#f5333f', 'close_fg' => '#ffffff',
             'close_position' => 'bottom-center', 'close_size' => 'large',
+            'allow_same_origin' => false,   // aislamiento estricto
         ],
         [
             'id' => 'newsletter', 'label' => '',
@@ -40,6 +45,7 @@ return [
             'display' => 'popup', 'width' => '580px', 'height' => '470px',
             'close_text' => 'CERRAR / CLOSE', 'close_bg' => '#f5333f', 'close_fg' => '#ffffff',
             'close_position' => 'bottom-center', 'close_size' => 'medium',
+            'allow_same_origin' => true,    // formulario con sesión / reproductor de YouTube
         ],
         [
             'id' => 'video', 'label' => '',
@@ -48,6 +54,7 @@ return [
             'display' => 'popup', 'width' => '100%', 'height' => 'auto',
             'close_text' => 'CERRAR / CLOSE', 'close_bg' => '#f5333f', 'close_fg' => '#ffffff',
             'close_position' => 'bottom-center', 'close_size' => 'medium',
+            'allow_same_origin' => true,    // formulario con sesión / reproductor de YouTube
         ],
     ],
 

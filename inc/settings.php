@@ -24,23 +24,43 @@ const RESET_MAX_PER_HOUR = 3;
 // Nombre del archivo del modo kiosco (ruta secreta).
 const KIOSK_FILE = 'VXM7D4mGu83ERwJC.html';
 
-// Carpeta de datos (JSON de configuración, usuarios, intentos, sesiones).
-// Recomendado: moverla fuera de public_html, p. ej. '/home/USUARIO/welcome-data'
-const DATA_DIR = __DIR__ . '/../data';
+// Carpeta de datos (configuración, usuarios, intentos, sesiones, registros). DEBE quedar fuera de la web.
+// Vacío = automático: carpeta "welcome-kiosk-data" en el directorio personal de la cuenta (en cPanel,
+// /home/USUARIO/welcome-kiosk-data, fuera de public_html). Para fijarla a mano, p. ej.:
+//   const DATA_DIR = '/home/USUARIO/welcome-kiosk-data';
+// Si existía la carpeta antigua data/ dentro del sitio, sus datos se trasladan solos en la primera visita.
+const DATA_DIR = '';
+
+// Opcional: limitar el acceso al panel (login, recuperación y administración) a estas IP o rangos CIDR.
+// Vacío = sin restricción. Ej.: ['203.0.113.10', '198.51.100.0/24', '2001:db8::/32']
+// La pantalla del kiosco no se ve afectada.
+const ADMIN_ALLOW_IPS = [];
 
 // Sesión: cierre por inactividad y duración máxima (segundos)
 const SESSION_IDLE = 1800;   // 30 min
 const SESSION_MAX  = 28800;  // 8 h
 
 // Protección contra fuerza bruta
-const LOGIN_MAX_IP     = 5;      // fallos por IP antes de bloquear
-const LOGIN_MAX_USER   = 10;     // fallos por usuario (desde cualquier IP) antes de bloquear
-const LOGIN_WINDOW     = 900;    // ventana de recuento de fallos (15 min)
-const LOGIN_LOCK       = 900;    // primer bloqueo: 15 min (se duplica en cada bloqueo sucesivo)
-const LOGIN_LOCK_MAX   = 86400;  // bloqueo máximo: 24 h
+// - Por IP + usuario: 5 fallos → bloqueo de 5 min que se duplica en cada reincidencia (máx. 1 h).
+//   El contador es distinto para los navegadores de confianza (donde el usuario ya entró antes), así que
+//   un tercero no puede bloquear a un usuario en su propio equipo.
+// - Por IP (cualquier usuario): 30 fallos → mismo bloqueo. Frena barridos desde una misma dirección.
+// - Por cuenta (desde cualquier IP): a partir de 20 fallos NO se bloquea; se activa un modo lento
+//   (1 intento cada 10 s para navegadores no reconocidos) y se avisa por correo a los administradores.
+const LOGIN_MAX_PAIR    = 5;
+const LOGIN_MAX_IP      = 30;
+const LOGIN_USER_SOFT   = 20;
+const LOGIN_SOFT_DELAY  = 10;     // segundos entre intentos en modo lento
+const LOGIN_WINDOW      = 900;    // ventana de recuento de fallos (15 min)
+const LOGIN_LOCK        = 300;    // primer bloqueo: 5 min
+const LOGIN_LOCK_MAX    = 3600;   // bloqueo máximo: 1 h
+const TRUSTED_DEVICE_DAYS = 90;   // validez de la marca de "navegador de confianza"
 
 // Subidas
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
+// Si el servidor tiene Imagick con soporte SVG, los SVG subidos se convierten a PNG (más seguro).
+// Si no, se guardan como SVG depurado con una lista cerrada de etiquetas y atributos.
+const SVG_TO_PNG = true;
 
 // Contraseñas
 const MIN_PASSWORD = 10;

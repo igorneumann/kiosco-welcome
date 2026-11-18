@@ -2,41 +2,49 @@
 declare(strict_types=1);
 require __DIR__ . '/inc/bootstrap.php';
 
+require_allowed_ip();
 session_boot();
 security_headers();
 
 $ip = client_ip();
-$un = (string)($_GET['u'] ?? $_POST['u'] ?? '');
-$token = (string)($_GET['t'] ?? $_POST['t'] ?? '');
+$isPost = $_SERVER['REQUEST_METHOD'] === 'POST';
+$un = (string)($isPost ? ($_POST['u'] ?? '') : ($_GET['u'] ?? ''));
+$token = (string)($isPost ? ($_POST['t'] ?? '') : ($_GET['t'] ?? ''));
 $un = mb_substr($un, 0, 100);
 $token = preg_match('/^[a-f0-9]{64}$/', $token) ? $token : '';
 $error = '';
 $done = false;
 
-/** Comprueba el enlace sin consumirlo. */
-function reset_valid(string $un, string $token): bool
+/**
+ * Comprueba el enlace sin consumirlo: token correcto, no caducado, y la contraseña no ha cambiado
+ * desde que se pidió (si cambió por otra vía, el enlace deja de valer).
+ */
+function reset_record_valid(?array $r, ?array $u, string $token): bool
 {
-    if ($un === '' || $token === '') {
-        return false;
-    }
-    $r = json_read(data_path('resets.json'))[mb_strtolower($un)] ?? null;
-    return $r && !empty($r['hash']) && ($r['expires'] ?? 0) >= time()
-        && hash_equals($r['hash'], hash('sha256', $token)) && user_find($un) !== null;
+    return $r && $u && !empty($r['hash']) && ($r['expires'] ?? 0) >= time()
+        && hash_equals($r['hash'], hash('sha256', $token))
+        && hash_equals((string)($r['pwfp'] ?? ''), password_fingerprint($u['hash']));
 }
 
-$wait = throttle_wait('resetlink:' . $ip, '');
+// Límites: visitar un enlace (GET) solo se limita de forma muy holgada para evitar abusos (abrir un
+// enlace caducado no penaliza); los envíos del formulario (POST) con enlace no válido, de forma estricta.
+$viewKey = 'resetview:' . $ip;
+$postKey = 'resetlink:' . $ip;
+$wait = throttle_wait($isPost ? [$postKey] : [$viewKey]);
+
 if ($wait > 0) {
     $valid = false;
     $error = 'Demasiados intentos. Inténtelo de nuevo en ' . ceil($wait / 60) . ' min.';
 } else {
-    $valid = reset_valid($un, $token);
-    if (!$valid) {
-        throttle_fail('resetlink:' . $ip, '');
-        auth_log('reset_link_invalid', $un);
+    $valid = $un !== '' && $token !== ''
+        && reset_record_valid(json_read(data_path('resets.json'))[mb_strtolower($un)] ?? null, user_find($un), $token);
+    if (!$valid && ($un !== '' || $token !== '')) {
+        throttle_fail($isPost ? [$postKey => 10] : [$viewKey => 60]);
+        auth_log($isPost ? 'reset_post_invalid' : 'reset_link_invalid', $un);
     }
 }
 
-if ($valid && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($valid && $isPost) {
     csrf_check();
     $new = (string)($_POST['new'] ?? '');
     $u = user_find($un);
@@ -45,25 +53,35 @@ if ($valid && $_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($p = password_problem($new, $u['username'])) {
         $error = $p;
     } else {
-        // Consumir el enlace de forma atómica (un solo uso)
-        $consumed = json_update(data_path('resets.json'), function (array &$d) use ($un, $token) {
-            $k = mb_strtolower($un);
-            $r = $d[$k] ?? null;
-            if (!$r || empty($r['hash']) || ($r['expires'] ?? 0) < time() || !hash_equals($r['hash'], hash('sha256', $token))) {
-                return false;
-            }
-            unset($d[$k]['hash'], $d[$k]['expires']);
-            return true;
-        });
-        if ($consumed) {
-            $hash = password_make($new);
-            users_update(function (array &$users) use ($u, $hash) {
-                foreach ($users as &$x) { if ($x['username'] === $u['username']) { $x['hash'] = $hash; } }
+        // 1) El hash se calcula ANTES de tocar ningún archivo.
+        $hash = password_make($new);
+        // 2) Con el enlace bloqueado: se revalida, se guarda la contraseña y SOLO si eso funciona se
+        //    consume el enlace. Si falla la escritura de usuarios, el enlace sigue siendo válido.
+        //    Si fallara la escritura del enlace, deja de valer igualmente porque la contraseña ya cambió.
+        try {
+            $ok = json_update(data_path('resets.json'), function (array &$d) use ($un, $token, $hash) {
+                $k = mb_strtolower($un);
+                $u = user_find($un);
+                if (!reset_record_valid($d[$k] ?? null, $u, $token)) {
+                    return false;
+                }
+                users_update(function (array &$users) use ($u, $hash) {
+                    foreach ($users as &$x) { if ($x['username'] === $u['username']) { $x['hash'] = $hash; } }
+                });
+                unset($d[$k]['hash'], $d[$k]['expires'], $d[$k]['pwfp']);
+                return true;
             });
-            throttle_clear($ip, $u['username']); // desbloquea el acceso si estaba bloqueado por fallos
-            logout();                              // cierra cualquier sesión de este navegador
+        } catch (RuntimeException $ex) {
+            error_log('[welcome-kiosk] reset: ' . $ex->getMessage());
+            $ok = null;
+        }
+        if ($ok === true) {
+            throttle_clear(['pair:anon:' . $ip . '|' . mb_strtolower($u['username'])]); // levanta el bloqueo de esta conexión para esa cuenta
+            logout();
             auth_log('reset_password_ok', $u['username']);
             $done = true;
+        } elseif ($ok === null) {
+            $error = 'No se pudo guardar la contraseña por un error del servidor. El enlace sigue siendo válido: inténtelo de nuevo en unos minutos.';
         } else {
             $valid = false;
         }

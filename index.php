@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/inc/bootstrap.php';
 
+require_allowed_ip();
 session_boot();
 security_headers();
 
@@ -18,14 +19,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($setupMode) {
         /* ---------- Instalación inicial ---------- */
-        $wait = throttle_wait($ip, '');
+        $wait = throttle_wait(['setup:' . $ip]);
         $key  = (string)($_POST['setup_key'] ?? '');
         if ($wait > 0) {
             $error = 'Demasiados intentos. Espere ' . ceil($wait / 60) . ' min.';
         } elseif (SETUP_KEY === 'CAMBIAR-ESTA-CLAVE' || strlen(SETUP_KEY) < 12) {
             $error = 'Edite inc/settings.php y cambie SETUP_KEY (mín. 12 caracteres) antes de instalar.';
         } elseif (!hash_equals(SETUP_KEY, $key)) {
-            throttle_fail($ip, '');
+            throttle_fail(['setup:' . $ip => 5]);
             auth_log('setup_fail');
             sleep(1);
             $error = 'Clave de instalación incorrecta.';
@@ -60,16 +61,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = post_str('username', 100);
         $pass = (string)($_POST['password'] ?? '');
         $pass = mb_substr($pass, 0, 256);
-        $wait = throttle_wait($ip, $user);
+        $acct    = login_account_key($user);           // mismo contador entre usuario y correo
+        $trusted = device_trusted($acct);              // navegador donde esa cuenta ya entró antes
+        $wait    = login_wait($ip, $acct, $trusted);
 
         if ($wait > 0) {
-            auth_log('blocked', $user);
-            $error = 'Demasiados intentos fallidos. Inténtelo de nuevo en ' . ceil($wait / 60) . ' min.';
+            auth_log('blocked' . ($trusted ? '_trusted' : ''), $user);
+            $error = $wait <= 60
+                ? 'Demasiados intentos. Espere ' . $wait . ' s y vuelva a intentarlo.'
+                : 'Demasiados intentos fallidos desde esta conexión. Inténtelo de nuevo en ' . ceil($wait / 60) . ' min o use «¿Olvidó su contraseña?».';
         } else {
             $u  = user_find_login($user);
             $ok = password_verify($pass, $u['hash'] ?? DUMMY_HASH) && $u !== null;
             if ($ok) {
-                throttle_clear($ip, $user);
+                login_success($ip, $acct, $trusted);
+                device_issue($u['username']);
                 if (password_needs_rehash($u['hash'], defined('PASSWORD_ARGON2ID') ? PASSWORD_ARGON2ID : PASSWORD_DEFAULT)) {
                     $newHash = password_make($pass);
                     users_update(function (array &$users) use ($u, $newHash) {
@@ -83,8 +89,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 auth_log('login_ok', $u['username']);
                 redirect('admin.php');
             }
-            throttle_fail($ip, $user);
-            auth_log('login_fail', $user);
+            if (login_fail($ip, $acct, $trusted)) {
+                alert_admins($acct);
+            }
+            auth_log('login_fail' . ($trusted ? '_trusted' : ''), $user);
             sleep(1);
             $error = 'Usuario o contraseña incorrectos.';
         }

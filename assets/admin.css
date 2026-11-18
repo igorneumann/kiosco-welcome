@@ -116,3 +116,5 @@ table.users th { font-size: 13px; color: var(--muted); font-weight: 600; }
   .grid3 .span2 { grid-column: auto; }
   .topbar { flex-wrap: wrap; }
 }
+
+.msg.banner { margin: 16px 20px 0; }
