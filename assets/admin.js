@@ -17,24 +17,22 @@
     });
   });
 
-  // Tamaño del texto central
-  var range = document.getElementById('sizeRange');
-  var out = document.getElementById('sizeOut');
-  var fixedRadio = document.querySelector('input[name="center_font_mode"][value="fixed"]');
-  var autoRadio = document.querySelector('input[name="center_font_mode"][value="auto"]');
-  if (range && out) {
+  // Tamaño de cada texto central: mover el control pasa a Manual; AUTO pasa a Auto y guarda
+  document.querySelectorAll('.ctext-block').forEach(function (blk) {
+    var range = blk.querySelector('[data-size]');
+    var out = blk.querySelector('[data-size-out]');
+    var fixedRadio = blk.querySelector('[data-mode="fixed"]');
+    var autoRadio = blk.querySelector('[data-mode="auto"]');
     range.addEventListener('input', function () {
       out.textContent = range.value;
-      if (fixedRadio) fixedRadio.checked = true;
+      fixedRadio.checked = true;
     });
-  }
-  var autoBtn = document.getElementById('autoBtn');
-  if (autoBtn && autoRadio) {
-    autoBtn.addEventListener('click', function () {
+    blk.querySelector('[data-auto]').addEventListener('click', function () {
       autoRadio.checked = true;
-      autoRadio.form.requestSubmit ? autoRadio.form.requestSubmit() : autoRadio.form.submit();
+      var f = autoRadio.form;
+      f.requestSubmit ? f.requestSubmit() : f.submit();
     });
-  }
+  });
 
   // Vista previa de iconos integrados
   function drawPreview(span, name) {

@@ -55,8 +55,12 @@
 
     startWelcome(c.welcome_texts || [], c.welcome_interval || 3, [c.welcome_color, c.welcome_color2 || c.welcome_color]);
 
-    var has = (c.center_text || '').trim() !== '';
-    $('#center-text').textContent = c.center_text || '';
+    var t1 = c.center_text || '', t2 = c.center_text2 || '';
+    $('#center-text').textContent = t1;
+    $('#center-text2').textContent = t2;
+    $('#center-text').hidden = t1.trim() === '';
+    $('#center-text2').hidden = t2.trim() === '';
+    var has = t1.trim() !== '' || t2.trim() !== '';
     $('#center').hidden = !has;
     $('#deco2').hidden = !has;
 
@@ -89,40 +93,70 @@
     }, Math.max(1.5, interval) * 1000);
   }
 
-  /* ---------------- Tamaño del texto central ---------------- */
+  /* ---------------- Tamaño de los textos centrales ---------------- */
+  // Cada texto tiene su modo (auto/manual), tamaño y negrita. Los automáticos se ajustan al ancho;
+  // si entre todos no caben en el alto disponible, los automáticos se reducen en proporción.
   function fit() {
     if (!cfg) return;
-    var center = $('#center'), ct = $('#center-text');
+    var center = $('#center');
     if (center.hidden) return;
 
-    if (cfg.center_font_mode !== 'auto') {
-      ct.classList.remove('auto');
-      ct.style.fontSize = (cfg.center_font_size || 6) + 'vw';
-      return;
-    }
+    var items = [
+      { el: $('#center-text'),  mode: cfg.center_font_mode,  size: cfg.center_font_size,  bold: cfg.center_bold },
+      { el: $('#center-text2'), mode: cfg.center_font_mode2, size: cfg.center_font_size2, bold: cfg.center_bold2 }
+    ].filter(function (it) { return !it.el.hidden; });
 
-    ct.classList.add('auto');
+    var autos = [];
+    items.forEach(function (it) {
+      it.el.classList.toggle('bold', !!it.bold);
+      if (it.mode === 'auto') {
+        it.el.classList.add('auto');
+        it.el.style.fontSize = '8px';
+        autos.push(it);
+      } else {
+        it.el.classList.remove('auto');
+        it.el.style.fontSize = (it.size || 6) + 'vw';
+      }
+    });
+    if (!autos.length) return;
+
     var main = $('#main'), cs = getComputedStyle(main);
     var availW = main.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     var minDeco = parseFloat(getComputedStyle($('#deco1')).minHeight) || 0; // alto mínimo de cada línea decorativa
-    ct.style.fontSize = '8px';
+    var gap = items.length > 1 ? parseFloat(getComputedStyle(center).rowGap) || 0 : 0;
     var availH = main.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
-               - $('#welcome').offsetHeight - $('#logo').offsetHeight - 2 * minDeco;
-    availH = Math.max(availH, 20);
+               - $('#welcome').offsetHeight - $('#logo').offsetHeight - 2 * minDeco - gap;
+    var fixedH = 0;
+    items.forEach(function (it) { if (it.mode !== 'auto') fixedH += it.el.offsetHeight; });
+    var roomH = Math.max(availH - fixedH, 20);
 
-    var lo = 8, hi = Math.max(availH, 9);
-    for (var n = 0; n < 22; n++) {
-      var mid = (lo + hi) / 2;
-      ct.style.fontSize = mid + 'px';
-      var b = ct.getBoundingClientRect();
-      if (b.width <= availW && b.height <= availH) lo = mid; else hi = mid;
+    // 1) Tamaño máximo de cada texto automático por separado (ancho y alto disponibles)
+    autos.forEach(function (it) {
+      var lo = 8, hi = Math.max(roomH, 9);
+      for (var n = 0; n < 22; n++) {
+        var mid = (lo + hi) / 2;
+        it.el.style.fontSize = mid + 'px';
+        var b = it.el.getBoundingClientRect();
+        if (b.width <= availW && b.height <= roomH) lo = mid; else hi = mid;
+      }
+      it.px = Math.floor(lo);
+      it.el.style.fontSize = it.px + 'px';
+    });
+
+    // 2) Si juntos no caben en el alto, reducir todos en proporción
+    var sumH = 0;
+    autos.forEach(function (it) { sumH += it.el.offsetHeight; });
+    if (sumH > roomH) {
+      var k = roomH / sumH;
+      autos.forEach(function (it) { it.px = Math.max(8, Math.floor(it.px * k)); it.el.style.fontSize = it.px + 'px'; });
     }
-    var size = Math.floor(lo);
-    ct.style.fontSize = size + 'px';
-    // Seguridad: si aún desborda (imágenes cargando, etc.), reducir hasta que quepa
-    while (size > 8 && (ct.offsetHeight > center.clientHeight + 1 || main.scrollHeight > main.clientHeight + 1)) {
-      size -= 2;
-      ct.style.fontSize = size + 'px';
+
+    // 3) Seguridad: si aún desborda (imágenes cargando, etc.), reducir hasta que quepa
+    var guard = 0;
+    while (guard++ < 200 && (center.scrollHeight > center.clientHeight + 1 || main.scrollHeight > main.clientHeight + 1)) {
+      var shrunk = false;
+      autos.forEach(function (it) { if (it.px > 8) { it.px -= 2; it.el.style.fontSize = it.px + 'px'; shrunk = true; } });
+      if (!shrunk) break;
     }
   }
 
@@ -220,14 +254,17 @@
   // Al tocar dentro del iframe la ventana pierde el foco: lo contamos como actividad
   window.addEventListener('blur', bumpIdle);
 
-  /* ---------------- 5 clics en el rodapié = recarga sin caché ---------------- */
+  /* ---------------- 3 clics en el fondo = recarga sin caché ---------------- */
+  // Cuenta los clics en cualquier zona de fondo de la página o del rodapié (no en los iconos
+  // ni dentro de una ventana abierta). 3 clics en menos de 2 segundos recargan.
   var clicks = [];
-  $('#footer').addEventListener('click', function (e) {
-    if (e.target.closest && e.target.closest('.ficon')) return;
+  document.addEventListener('click', function (e) {
+    if (modal) return;
+    if (e.target.closest && e.target.closest('.ficon, button, a, .overlay')) return;
     var now = Date.now();
-    clicks = clicks.filter(function (t) { return now - t < 3000; });
+    clicks = clicks.filter(function (t) { return now - t < 2000; });
     clicks.push(now);
-    if (clicks.length >= 5) { clicks = []; hardReload(); }
+    if (clicks.length >= 3) { clicks = []; hardReload(); }
   });
 
   function hardReload() {

@@ -66,7 +66,8 @@ legend { font-weight: 600; padding: 0 6px; }
 .radio { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-size: 14px; margin: 0 16px 0 0; }
 .size-row { align-items: flex-end; }
 .size-row .grow { flex: 1; margin: 0; }
-#autoBtn { font-weight: 800; }
+[data-auto] { font-weight: 800; }
+.ctext-block { margin-bottom: 14px; }
 
 .grid2 { display: grid; grid-template-columns: 2fr 1fr; gap: 0 14px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 14px; align-items: end; }
