@@ -18,7 +18,7 @@ Sustituye a la instalación de WordPress. PHP 8.0 o superior (recomendado 8.1+),
 6. Abra `https://welcome.bezares.com/`, introduzca la clave de instalación y cree el usuario **administrador** y el **mantenedor**. A partir de ahí el formulario de instalación desaparece.
 7. En el equipo del kiosco, abra `https://welcome.bezares.com/VXM7D4mGu83ERwJC.html` en modo pantalla completa / kiosco del navegador.
 
-Si venía de una versión anterior con los datos en `data/` dentro del sitio, se trasladan automáticamente a la nueva carpeta en la primera visita. Si la carpeta de datos quedara dentro de la web, el panel del administrador muestra un aviso en rojo.
+Si venía de una versión anterior con los datos en `data/` dentro del sitio, se trasladan automáticamente a la nueva carpeta en la primera visita. El traslado es «todo o nada»: se copian y verifican (SHA-256) todos los archivos, y solo entonces se escribe la marca `.migrated` y se borran los originales; si algo falla, los originales quedan intactos, el sitio muestra un error de configuración y se reintenta en la siguiente visita. Si la carpeta de datos quedara dentro de la web, el panel del administrador muestra un aviso en rojo.
 
 La URL del kiosco la sirve `kiosk.php` (regla de `.htaccess`) para enviar una CSP con los dominios permitidos. Si cambia `KIOSK_FILE`, cambie también esa regla.
 
@@ -59,7 +59,7 @@ La respuesta es siempre la misma (no revela si el usuario existe), hay límite d
 
 **Subidas de imágenes**
 - PNG/JPG/WEBP/GIF: se vuelven a codificar con GD (se eliminan metadatos y cualquier contenido oculto; un GIF animado queda en su primer fotograma).
-- SVG: se reconstruyen con una **lista cerrada** de etiquetas y atributos (sin scripts, eventos, `foreignObject`, SVG anidados, enlaces externos ni `data:`); si el servidor tiene Imagick con soporte SVG, se convierten a **PNG**.
+- SVG: se reconstruyen con una **lista cerrada** de etiquetas y atributos (sin scripts, eventos, `foreignObject`, SVG anidados, enlaces externos ni `data:`); si el servidor tiene Imagick con soporte SVG, se convierten a **PNG**. Antes de convertir se rechazan los SVG de más de 2 MB, más de 20 000 elementos, dimensiones declaradas excesivas o desproporcionadas, y el lienzo de salida se fija a 2048 px como máximo, con límites de memoria (256 MB), píxeles y tiempo (20 s) en Imagick.
 - `uploads/` solo sirve imágenes, sin ejecución de código y con CSP `sandbox`.
 
 **Ventanas del kiosco (iframes)**
