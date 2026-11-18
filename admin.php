@@ -245,10 +245,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'user_add':
                 $anchor = 'usuarios';
-                $un = post_str('username', 32);
+                $un = post_str('username', 100);
                 $pw = (string)($_POST['password'] ?? '');
                 $role = post_enum('role', ['admin', 'maintainer'], 'maintainer');
-                if (!username_valid($un)) { throw new RuntimeException('Usuario: 3–32 caracteres (letras, números, punto, guion).'); }
+                if (!username_valid($un)) { throw new RuntimeException('Usuario: una dirección de correo o 3–64 caracteres (letras, números, punto, guion).'); }
                 if (user_find($un)) { throw new RuntimeException('Ese usuario ya existe.'); }
                 if ($p = password_problem($pw, $un)) { throw new RuntimeException($p); }
                 $hash = password_make($pw);
@@ -261,7 +261,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'user_password':
                 $anchor = 'usuarios';
-                $un = post_str('username', 32);
+                $un = post_str('username', 100);
                 $pw = (string)($_POST['password'] ?? '');
                 if (!user_find($un)) { throw new RuntimeException('Usuario no encontrado.'); }
                 if ($p = password_problem($pw, $un)) { throw new RuntimeException($p); }
@@ -276,7 +276,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'user_delete':
                 $anchor = 'usuarios';
-                $un = post_str('username', 32);
+                $un = post_str('username', 100);
                 if ($un === $me['username']) { throw new RuntimeException('No puede eliminar su propio usuario.'); }
                 users_update(function (array &$users) use ($un) {
                     $users = array_values(array_filter($users, fn($u) => $u['username'] !== $un));
@@ -547,7 +547,7 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
   <h3>Añadir usuario</h3>
   <form method="post" class="row" autocomplete="off">
     <?= csrf_field() ?><input type="hidden" name="action" value="user_add">
-    <input name="username" placeholder="usuario" required pattern="[a-zA-Z0-9._\-]{3,32}">
+    <input name="username" placeholder="usuario o correo" required maxlength="100" autocomplete="username">
     <input type="password" name="password" placeholder="contraseña" required minlength="<?= MIN_PASSWORD ?>" autocomplete="new-password">
     <select name="role"><option value="maintainer">Mantenedor</option><option value="admin">Administrador</option></select>
     <button class="btn primary">Crear</button>

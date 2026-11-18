@@ -158,7 +158,9 @@ function password_problem(string $p, string $username = ''): ?string
 
 function username_valid(string $u): bool
 {
-    return (bool)preg_match('/^[a-zA-Z0-9._-]{3,32}$/', $u);
+    // Nombre corto (p. ej. "mantenedor") o dirección de correo (p. ej. "i.neumann@bezares.com")
+    return (bool)preg_match('/^[a-zA-Z0-9._-]{3,64}$/', $u)
+        || (strlen($u) <= 100 && filter_var($u, FILTER_VALIDATE_EMAIL) !== false);
 }
 
 /* ---------------------------------------------------------------- *
