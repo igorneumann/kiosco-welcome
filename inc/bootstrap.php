@@ -86,7 +86,11 @@ function data_dir_is_public(): bool
  *     contenido es idéntico (SHA-256).
  *  2. Solo si TODAS las copias son correctas, las renombra a su nombre final y escribe la marca
  *     .migrated. Hasta ese momento los originales no se tocan.
- *  3. Después borra los originales (si no se pudieran borrar, la marca evita repetir la migración).
+ *  3. Después borra los originales que se han copiado o verificado como idénticos (si no se pudieran
+ *     borrar, la marca evita repetir la migración).
+ * Si un archivo ya existe en el destino con un contenido DISTINTO, es un conflicto: la migración se
+ * detiene sin copiar ni borrar nada, se conservan ambos archivos y se indica cuáles son para que el
+ * administrador decida cuál conservar.
  * Si algo falla, se descartan los temporales, los originales quedan intactos, no se escribe la marca
  * y la petición se detiene con un error (para no arrancar con una carpeta de datos incompleta).
  * En la siguiente visita se vuelve a intentar.
@@ -110,7 +114,25 @@ function migrate_legacy_data(string $dir): void
             return;
         }
         $files = ['users.json', 'config.json', 'attempts.json', 'resets.json', 'auth.log', 'auth.log.1', 'secret.key'];
-        $plan = [];   // temporal => destino final
+        // 1) Detección de conflictos ANTES de copiar nada
+        $conflicts = [];
+        foreach ($files as $f) {
+            if (is_file("$old/$f") && is_file("$dir/$f")) {
+                $a = @hash_file('sha256', "$old/$f");
+                $b = @hash_file('sha256', "$dir/$f");
+                if (!$a || !$b || $a !== $b) {
+                    $conflicts[] = $f;
+                }
+            }
+        }
+        if ($conflicts) {
+            data_fail('Migración detenida: ' . implode(', ', $conflicts) . " existe(n) en {$old} y en {$dir} con contenido distinto. "
+                . 'No se ha copiado ni borrado nada. Compare ambos, deje solo la versión correcta (o cree el archivo '
+                . "{$dir}/.migrated si los datos nuevos son los buenos) y recargue la página.");
+        }
+
+        $plan = [];      // temporal => destino final
+        $verified = [];  // originales que se pueden borrar al final (copiados o idénticos)
         $failed = '';
         foreach ($files as $f) {
             $src = "$old/$f";
@@ -120,11 +142,7 @@ function migrate_legacy_data(string $dir): void
             }
             $srcHash = @hash_file('sha256', $src);
             if (is_file($dst)) {
-                // Ya existe en el destino: si es idéntico, nada que hacer; si difiere, el destino es más
-                // reciente (se ha usado tras una migración anterior) y se conserva.
-                if ($srcHash !== @hash_file('sha256', $dst)) {
-                    error_log("[welcome-kiosk] Migración: {$f} ya existe en destino con otro contenido; se conserva el del destino");
-                }
+                $verified[] = $f; // idéntico (comprobado arriba)
                 continue;
             }
             $tmp = $dst . '.migrating';
@@ -134,6 +152,7 @@ function migrate_legacy_data(string $dir): void
             }
             @chmod($tmp, 0600);
             $plan[$tmp] = $dst;
+            $verified[] = $f;
         }
 
         if ($failed === '') {
@@ -160,9 +179,9 @@ function migrate_legacy_data(string $dir): void
         }
         @chmod($marker, 0600);
 
-        // Migración confirmada: ya se pueden retirar los originales
-        foreach ($files as $f) {
-            if (is_file("$old/$f") && is_file("$dir/$f")) {
+        // Migración confirmada: se retiran solo los originales copiados o verificados como idénticos
+        foreach ($verified as $f) {
+            if (is_file("$dir/$f") && @hash_file('sha256', "$old/$f") === @hash_file('sha256', "$dir/$f")) {
                 @unlink("$old/$f");
             }
         }
@@ -881,12 +900,12 @@ function handle_upload(string $field, string $prefix): ?string
 /**
  * Vuelve a codificar un mapa de bits con GD. PNG/GIF → PNG (conserva transparencia; un GIF animado
  * queda en su primer fotograma), JPEG → JPEG, WEBP → WEBP. Devuelve [bytes, extensión].
- * Si GD no está disponible, se conserva el archivo original (ya validado como imagen).
+ * GD es obligatoria: sin ella no se acepta ninguna imagen (nunca se guarda el archivo original).
  */
 function raster_reencode(string $file, string $mime, string $ext): array
 {
     if (!extension_loaded('gd')) {
-        return [(string)file_get_contents($file), $ext];
+        throw new RuntimeException('La extensión GD es obligatoria para subir imágenes. Actívela en cPanel (Select PHP Version → Extensions → gd).');
     }
     $img = match ($mime) {
         'image/png'  => @imagecreatefrompng($file),
