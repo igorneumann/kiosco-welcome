@@ -26,11 +26,11 @@ function reset_record_valid(?array $r, ?array $u, string $token): bool
         && hash_equals((string)($r['pwfp'] ?? ''), password_fingerprint($u['hash']));
 }
 
-// Límites: visitar un enlace (GET) solo se limita de forma muy holgada para evitar abusos (abrir un
-// enlace caducado no penaliza); los envíos del formulario (POST) con enlace no válido, de forma estricta.
-$viewKey = 'resetview:' . $ip;
+// Límites: las visitas (GET) nunca se penalizan ni se bloquean (abrir un enlace caducado o erróneo
+// solo muestra el aviso; el token tiene 256 bits, así que no se puede adivinar visitando URL).
+// Los envíos del formulario (POST) con enlace no válido sí tienen un límite estricto por IP.
 $postKey = 'resetlink:' . $ip;
-$wait = throttle_wait($isPost ? [$postKey] : [$viewKey]);
+$wait = $isPost ? throttle_wait([$postKey]) : 0;
 
 if ($wait > 0) {
     $valid = false;
@@ -38,9 +38,11 @@ if ($wait > 0) {
 } else {
     $valid = $un !== '' && $token !== ''
         && reset_record_valid(json_read(data_path('resets.json'))[mb_strtolower($un)] ?? null, user_find($un), $token);
-    if (!$valid && ($un !== '' || $token !== '')) {
-        throttle_fail($isPost ? [$postKey => 10] : [$viewKey => 60]);
-        auth_log($isPost ? 'reset_post_invalid' : 'reset_link_invalid', $un);
+    if (!$valid && $isPost) {
+        throttle_fail([$postKey => 10]);
+        auth_log('reset_post_invalid', $un);
+    } elseif (!$valid && ($un !== '' || $token !== '')) {
+        auth_log('reset_link_invalid', $un); // solo registro, sin penalización
     }
 }
 
