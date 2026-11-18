@@ -78,23 +78,99 @@ function data_dir_is_public(): bool
     return false;
 }
 
-/** Traslada los datos de la antigua carpeta data/ del sitio a la nueva ubicación (una sola vez). */
+/**
+ * Traslada los datos de la antigua carpeta data/ del sitio a la nueva ubicación.
+ *
+ * Es "todo o nada":
+ *  1. Con un bloqueo exclusivo, copia cada archivo a un temporal en el destino y comprueba que el
+ *     contenido es idéntico (SHA-256).
+ *  2. Solo si TODAS las copias son correctas, las renombra a su nombre final y escribe la marca
+ *     .migrated. Hasta ese momento los originales no se tocan.
+ *  3. Después borra los originales (si no se pudieran borrar, la marca evita repetir la migración).
+ * Si algo falla, se descartan los temporales, los originales quedan intactos, no se escribe la marca
+ * y la petición se detiene con un error (para no arrancar con una carpeta de datos incompleta).
+ * En la siguiente visita se vuelve a intentar.
+ */
 function migrate_legacy_data(string $dir): void
 {
     $old = APP_ROOT . '/data';
     $oldReal = realpath($old);
-    if (!$oldReal || $oldReal === $dir || !is_file($old . '/users.json') || is_file($dir . '/users.json')) {
+    $marker = $dir . '/.migrated';
+    if (!$oldReal || $oldReal === $dir || is_file($marker) || !is_file($old . '/users.json')) {
         return;
     }
-    foreach (['users.json', 'config.json', 'attempts.json', 'resets.json', 'auth.log', 'auth.log.1', 'secret.key'] as $f) {
-        if (is_file("$old/$f") && !is_file("$dir/$f")) {
-            if (@copy("$old/$f", "$dir/$f")) {
-                @chmod("$dir/$f", 0600);
+
+    $lock = @fopen($dir . '/.migrate.lock', 'c');
+    if (!$lock) {
+        data_fail("Migración: no se puede crear el bloqueo en {$dir}");
+    }
+    flock($lock, LOCK_EX);
+    try {
+        if (is_file($marker)) { // otra petición terminó mientras esperábamos
+            return;
+        }
+        $files = ['users.json', 'config.json', 'attempts.json', 'resets.json', 'auth.log', 'auth.log.1', 'secret.key'];
+        $plan = [];   // temporal => destino final
+        $failed = '';
+        foreach ($files as $f) {
+            $src = "$old/$f";
+            $dst = "$dir/$f";
+            if (!is_file($src)) {
+                continue;
+            }
+            $srcHash = @hash_file('sha256', $src);
+            if (is_file($dst)) {
+                // Ya existe en el destino: si es idéntico, nada que hacer; si difiere, el destino es más
+                // reciente (se ha usado tras una migración anterior) y se conserva.
+                if ($srcHash !== @hash_file('sha256', $dst)) {
+                    error_log("[welcome-kiosk] Migración: {$f} ya existe en destino con otro contenido; se conserva el del destino");
+                }
+                continue;
+            }
+            $tmp = $dst . '.migrating';
+            if (!$srcHash || !@copy($src, $tmp) || @hash_file('sha256', $tmp) !== $srcHash) {
+                $failed = $f;
+                break;
+            }
+            @chmod($tmp, 0600);
+            $plan[$tmp] = $dst;
+        }
+
+        if ($failed === '') {
+            foreach ($plan as $tmp => $dst) {
+                if (!@rename($tmp, $dst)) {
+                    $failed = basename($dst);
+                    // deshacer lo ya renombrado en esta pasada para no dejar el destino a medias
+                    foreach ($plan as $t2 => $d2) {
+                        if ($t2 === $tmp) { break; }
+                        @unlink($d2);
+                    }
+                    break;
+                }
+            }
+        }
+
+        if ($failed !== '') {
+            foreach (array_keys($plan) as $tmp) { @unlink($tmp); }
+            data_fail("Migración de {$old} a {$dir} interrumpida al copiar {$failed}; los originales siguen intactos y se reintentará");
+        }
+
+        if (@file_put_contents($marker, date('c') . " migrado desde {$oldReal}\n") === false) {
+            data_fail("Migración: no se puede escribir la marca {$marker}");
+        }
+        @chmod($marker, 0600);
+
+        // Migración confirmada: ya se pueden retirar los originales
+        foreach ($files as $f) {
+            if (is_file("$old/$f") && is_file("$dir/$f")) {
                 @unlink("$old/$f");
             }
         }
+        error_log("[welcome-kiosk] Datos trasladados de {$old} a {$dir}");
+    } finally {
+        flock($lock, LOCK_UN);
+        fclose($lock);
     }
-    error_log("[welcome-kiosk] Datos trasladados de {$old} a {$dir}");
 }
 
 function data_path(string $name): string
@@ -775,6 +851,9 @@ function handle_upload(string $field, string $prefix): ?string
               && preg_match('/\.svg$/i', (string)$f['name']));
 
     if ($isSvg) {
+        if ($f['size'] > 2 * 1024 * 1024) {
+            throw new RuntimeException('El SVG supera el tamaño máximo (2 MB).');
+        }
         $clean = svg_sanitize((string)file_get_contents($f['tmp_name']));
         $png = SVG_TO_PNG ? svg_to_png($clean) : null;
         [$data, $ext] = $png !== null ? [$png, 'png'] : [$clean, 'svg'];
@@ -844,25 +923,112 @@ function raster_reencode(string $file, string $mime, string $ext): array
     return [$data, $out];
 }
 
-/** Convierte un SVG (ya depurado) a PNG con Imagick si el servidor lo permite; si no, null. */
+/** Límites de la conversión SVG → PNG (se comprueban ANTES de que Imagick lea el SVG). */
+const SVG_MAX_ELEMENTS = 20000;     // elementos SVG
+const SVG_MAX_DECLARED = 20000;     // px por lado declarados en width/height/viewBox
+const SVG_RENDER_MAX   = 2048;      // px del lado mayor del PNG generado
+
+/** Convierte una longitud SVG (px, pt, mm, cm, in, pc o sin unidad) a píxeles; null si no es válida. */
+function svg_length_px(?string $v): ?float
+{
+    if ($v === null || !preg_match('/^\s*([0-9]*\.?[0-9]+(?:e[+-]?\d+)?)\s*(px|pt|pc|mm|cm|in)?\s*$/i', $v, $m)) {
+        return null;
+    }
+    $f = ['' => 1, 'px' => 1, 'pt' => 4 / 3, 'pc' => 16, 'mm' => 96 / 25.4, 'cm' => 96 / 2.54, 'in' => 96];
+    $px = (float)$m[1] * $f[strtolower($m[2] ?? '')];
+    return is_finite($px) && $px > 0 ? $px : null;
+}
+
+/**
+ * Convierte un SVG (ya depurado) a PNG con Imagick si el servidor lo permite; si no, null.
+ * Antes de llamar a Imagick: se calcula el tamaño declarado y se rechazan dimensiones o complejidad
+ * excesivas, se fija el tamaño exacto del lienzo de salida (como máximo SVG_RENDER_MAX px) y se
+ * limitan memoria, píxeles y tiempo de Imagick.
+ */
 function svg_to_png(string $svg): ?string
 {
     if (!class_exists('Imagick') || !in_array('SVG', Imagick::queryFormats('SVG'), true)) {
         return null;
     }
+
+    // 1) Tamaño y complejidad declarados
+    $prev = libxml_use_internal_errors(true);
+    $dom = new DOMDocument();
+    $ok = $dom->loadXML($svg, LIBXML_NONET);
+    libxml_clear_errors();
+    libxml_use_internal_errors($prev);
+    $root = $ok ? $dom->documentElement : null;
+    if (!$root) {
+        return null;
+    }
+    if ($dom->getElementsByTagName('*')->length > SVG_MAX_ELEMENTS) {
+        throw new RuntimeException('El SVG es demasiado complejo para convertirlo (más de ' . SVG_MAX_ELEMENTS . ' elementos).');
+    }
+    $w = svg_length_px($root->getAttribute('width') ?: null);
+    $h = svg_length_px($root->getAttribute('height') ?: null);
+    $vb = preg_split('/[\s,]+/', trim($root->getAttribute('viewBox')));
+    $vbw = count($vb) === 4 ? (float)$vb[2] : 0.0;
+    $vbh = count($vb) === 4 ? (float)$vb[3] : 0.0;
+    if (count($vb) === 4 && (!is_finite($vbw) || !is_finite($vbh) || $vbw <= 0 || $vbh <= 0)) {
+        throw new RuntimeException('El SVG tiene un viewBox no válido.');
+    }
+    // Proporción: width/height explícitos o, si faltan, el viewBox
+    $w = $w ?? ($vbw > 0 ? ($h && $vbh > 0 ? $h * $vbw / $vbh : $vbw) : null);
+    $h = $h ?? ($vbh > 0 ? ($w && $vbw > 0 ? $w * $vbh / $vbw : $vbh) : null);
+    if (!$w || !$h) {
+        return null; // sin tamaño determinable: se guarda como SVG depurado
+    }
+    if ($w > SVG_MAX_DECLARED || $h > SVG_MAX_DECLARED || $vbw > SVG_MAX_DECLARED * 10 || $vbh > SVG_MAX_DECLARED * 10
+        || $w / $h > 50 || $h / $w > 50) {
+        throw new RuntimeException('Las dimensiones del SVG son excesivas o desproporcionadas.');
+    }
+
+    // 2) Lienzo de salida acotado: se fijan width/height exactos en px (se conserva el viewBox)
+    $scale = min(SVG_RENDER_MAX / max($w, $h), 4.0);
+    $tw = max(1, (int)round($w * $scale));
+    $th = max(1, (int)round($h * $scale));
+    if (count($vb) !== 4) {
+        $root->setAttribute('viewBox', '0 0 ' . round($w, 3) . ' ' . round($h, 3));
+    }
+    $root->setAttribute('width', (string)$tw);
+    $root->setAttribute('height', (string)$th);
+    $root->setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    $bounded = $dom->saveXML($root);
+
+    // 3) Límites de recursos de Imagick antes de leer nada
+    $limits = [
+        'RESOURCETYPE_MEMORY' => 256 * 1024 * 1024,
+        'RESOURCETYPE_MAP'    => 512 * 1024 * 1024,
+        'RESOURCETYPE_AREA'   => 16 * 1024 * 1024,      // píxeles
+        'RESOURCETYPE_DISK'   => 1024 * 1024 * 1024,
+        'RESOURCETYPE_WIDTH'  => SVG_RENDER_MAX + 16,
+        'RESOURCETYPE_HEIGHT' => SVG_RENDER_MAX + 16,
+        'RESOURCETYPE_TIME'   => 20,                     // segundos
+    ];
+    foreach ($limits as $const => $value) {
+        if (defined('Imagick::' . $const)) {
+            Imagick::setResourceLimit(constant('Imagick::' . $const), $value);
+        }
+    }
+
     try {
         $im = new Imagick();
+        $im->setResolution(72, 72);       // 1 unidad = 1 px: el lienzo es exactamente $tw × $th
         $im->setBackgroundColor(new ImagickPixel('transparent'));
-        $im->setResolution(288, 288); // ~4x para que se vea nítido a pantalla completa
-        $im->readImageBlob($svg);
-        if ($im->getImageWidth() > 3000) {
-            $im->resizeImage(3000, 0, Imagick::FILTER_LANCZOS, 1);
+        $im->setOption('svg:xml-parse-huge', 'false');
+        $im->readImageBlob($bounded);
+        if ($im->getImageWidth() > SVG_RENDER_MAX + 16 || $im->getImageHeight() > SVG_RENDER_MAX + 16) {
+            $im->clear();
+            throw new RuntimeException('El SVG generó una imagen demasiado grande.');
         }
         $im->setImageFormat('png32');
         $png = $im->getImageBlob();
         $im->clear();
         return $png !== '' ? $png : null;
+    } catch (RuntimeException $e) {
+        throw $e;
     } catch (Throwable $e) {
+        // Fallo o límite de recursos alcanzado en Imagick: se guarda como SVG depurado (seguro para <img>)
         error_log('[welcome-kiosk] SVG→PNG: ' . $e->getMessage());
         return null;
     }
