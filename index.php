@@ -30,12 +30,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             sleep(1);
             $error = 'Clave de instalación incorrecta.';
         } else {
-            $au = post_str('admin_user', 32);
+            $au = post_str('admin_user', 100);
             $ap = (string)($_POST['admin_pass'] ?? '');
-            $mu = post_str('maint_user', 32);
+            $mu = post_str('maint_user', 100);
             $mp = (string)($_POST['maint_pass'] ?? '');
             if (!username_valid($au) || !username_valid($mu)) {
-                $error = 'Usuarios: 3–32 caracteres (letras, números, punto, guion).';
+                $error = 'Usuario: una dirección de correo o 3–64 caracteres (letras, números, punto, guion).';
             } elseif (strcasecmp($au, $mu) === 0) {
                 $error = 'Los dos usuarios deben ser distintos.';
             } elseif ($p = password_problem($ap, $au) ?? password_problem($mp, $mu)) {
@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } else {
         /* ---------- Inicio de sesión ---------- */
-        $user = post_str('username', 64);
+        $user = post_str('username', 100);
         $pass = (string)($_POST['password'] ?? '');
         $pass = mb_substr($pass, 0, 256);
         $wait = throttle_wait($ip, $user);
@@ -110,11 +110,11 @@ $flashes = flash_take();
       <?= csrf_field() ?>
       <label>Clave de instalación<input type="password" name="setup_key" required></label>
       <fieldset><legend>Administrador</legend>
-        <label>Usuario<input name="admin_user" required pattern="[a-zA-Z0-9._\-]{3,32}"></label>
+        <label>Usuario<input name="admin_user" required maxlength="100" autocomplete="username"></label>
         <label>Contraseña<input type="password" name="admin_pass" required minlength="<?= MIN_PASSWORD ?>" autocomplete="new-password"></label>
       </fieldset>
       <fieldset><legend>Mantenedor</legend>
-        <label>Usuario<input name="maint_user" required pattern="[a-zA-Z0-9._\-]{3,32}"></label>
+        <label>Usuario<input name="maint_user" required maxlength="100" autocomplete="username"></label>
         <label>Contraseña<input type="password" name="maint_pass" required minlength="<?= MIN_PASSWORD ?>" autocomplete="new-password"></label>
       </fieldset>
       <p class="hint">Contraseñas: mínimo <?= MIN_PASSWORD ?> caracteres y 3 tipos (minúsculas, mayúsculas, números, símbolos).</p>
@@ -124,7 +124,7 @@ $flashes = flash_take();
     <h1>Acceso</h1>
     <form method="post">
       <?= csrf_field() ?>
-      <label>Usuario<input name="username" required autocomplete="username" autofocus maxlength="64"></label>
+      <label>Usuario<input name="username" required autocomplete="username" autofocus maxlength="100"></label>
       <label>Contraseña<input type="password" name="password" required autocomplete="current-password" maxlength="256"></label>
       <button class="btn primary" type="submit">Entrar</button>
     </form>
