@@ -10,7 +10,7 @@ Sustituye a la instalación de WordPress. PHP 8.0 o superior (recomendado 8.1+),
 
 ## Instalación en cPanel
 
-1. **Antes de subir**, edite `inc/settings.php` y cambie `SETUP_KEY` por una clave propia (mín. 12 caracteres).
+1. **Antes de subir**, edite `inc/settings.php` y cambie `SETUP_KEY` por una clave propia (mín. 12 caracteres). Revise también `BASE_URL` y `MAIL_FROM` (remitente de los correos de recuperación; debe ser un buzón del dominio bezares.com).
 2. Haga copia de seguridad de la carpeta actual de WordPress de welcome.bezares.com (cPanel → *Administrador de archivos* → comprimir) y vacíela, o cree una carpeta nueva y apunte el subdominio a ella en *Dominios*.
 3. Suba `welcome-kiosco.zip` a esa carpeta y use *Extraer*. Compruebe que se ven los archivos ocultos (`.htaccess`) en *Configuración → Mostrar archivos ocultos*.
 4. Permisos: carpetas `data/` y `uploads/` → 755; archivos → 644.
@@ -25,6 +25,14 @@ Recomendado: mueva `data/` fuera de `public_html` (p. ej. `/home/USUARIO/welcome
 **Mantenedor**: texto central (varias líneas), tamaño manual o botón **AUTO** (ajusta la fuente al ancho y alto disponibles), biblioteca de logos inferiores (subir, elegir, borrar), **Restablecer por defecto** (sin texto central, logo de Bezares, borra los logos subidos), su contraseña.
 
 **Administrador**: todo lo anterior, más imagen de encabezado, imagen de fondo, logo por defecto, textos de bienvenida (uno por línea, se alternan), colores (rodapié, líneas, textos, fondo), intensidad y velocidad del latido del fondo, iconos del rodapié (añadir hasta 8, quitar, ordenar, icono integrado o imagen propia, URL / código iframe / YouTube, ventana emergente o página completa, ancho, alto, texto, color, posición y tamaño del botón de cierre), usuarios y restablecimiento total.
+
+## ¿Olvidó su contraseña?
+
+En la pantalla de acceso hay un enlace **¿Olvidó su contraseña?**. Se indica el usuario o el correo y se envía un enlace válido 30 minutos y de un solo uso a:
+- el *correo de recuperación* del usuario (se define al instalar o en *Usuarios*), o
+- el propio nombre de usuario, si es una dirección de correo.
+
+La respuesta es siempre la misma (no revela si el usuario existe), hay límite de 5 solicitudes cada 15 min por IP y 3 correos por usuario y hora, y al cambiar la contraseña se cierran todas las sesiones abiertas. El correo se envía con la función `mail()` de PHP del hosting; si no llega, revise el SPF del dominio o la carpeta de spam. El administrador siempre puede cambiar la contraseña de cualquier usuario desde el panel.
 
 ## Comportamiento del kiosco
 

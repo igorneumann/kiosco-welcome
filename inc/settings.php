@@ -10,6 +10,17 @@
 // Clave de instalación (mín. 12 caracteres). Mientras valga el texto por defecto, la instalación está bloqueada.
 const SETUP_KEY = 'CAMBIAR-ESTA-CLAVE';
 
+// Dirección pública del sitio (se usa en el enlace del correo de recuperación; nunca se toma de la petición)
+const BASE_URL = 'https://welcome.bezares.com';
+
+// Remitente de los correos de recuperación de contraseña (debe ser un buzón del dominio para que no acabe en spam)
+const MAIL_FROM = 'no-reply@bezares.com';
+const MAIL_FROM_NAME = 'Welcome Bezares';
+
+// Recuperación de contraseña: validez del enlace y máximo de correos por usuario y hora
+const RESET_TTL = 1800;        // 30 min
+const RESET_MAX_PER_HOUR = 3;
+
 // Nombre del archivo del modo kiosco (ruta secreta).
 const KIOSK_FILE = 'VXM7D4mGu83ERwJC.html';
 

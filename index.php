@@ -34,17 +34,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ap = (string)($_POST['admin_pass'] ?? '');
             $mu = post_str('maint_user', 100);
             $mp = (string)($_POST['maint_pass'] ?? '');
+            $ae = post_str('admin_email', 100);
+            $me = post_str('maint_email', 100);
             if (!username_valid($au) || !username_valid($mu)) {
                 $error = 'Usuario: una dirección de correo o 3–64 caracteres (letras, números, punto, guion).';
+            } elseif (!email_valid($ae) || !email_valid($me)) {
+                $error = 'El correo indicado no es válido.';
             } elseif (strcasecmp($au, $mu) === 0) {
                 $error = 'Los dos usuarios deben ser distintos.';
             } elseif ($p = password_problem($ap, $au) ?? password_problem($mp, $mu)) {
                 $error = $p;
             } else {
-                users_update(function (array &$users) use ($au, $ap, $mu, $mp) {
+                users_update(function (array &$users) use ($au, $ap, $mu, $mp, $ae, $me) {
                     if ($users) { return; } // carrera: ya instalado
-                    $users[] = ['username' => $au, 'role' => 'admin', 'hash' => password_make($ap)];
-                    $users[] = ['username' => $mu, 'role' => 'maintainer', 'hash' => password_make($mp)];
+                    $users[] = ['username' => $au, 'role' => 'admin', 'hash' => password_make($ap), 'email' => $ae];
+                    $users[] = ['username' => $mu, 'role' => 'maintainer', 'hash' => password_make($mp), 'email' => $me];
                 });
                 auth_log('setup_ok', $au);
                 $_SESSION['flash'][] = ['ok', 'Instalación completada. Inicie sesión.'];
@@ -62,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             auth_log('blocked', $user);
             $error = 'Demasiados intentos fallidos. Inténtelo de nuevo en ' . ceil($wait / 60) . ' min.';
         } else {
-            $u  = user_find($user);
+            $u  = user_find_login($user);
             $ok = password_verify($pass, $u['hash'] ?? DUMMY_HASH) && $u !== null;
             if ($ok) {
                 throttle_clear($ip, $user);
@@ -112,10 +116,12 @@ $flashes = flash_take();
       <fieldset><legend>Administrador</legend>
         <label>Usuario<input name="admin_user" required maxlength="100" autocomplete="username"></label>
         <label>Contraseña<input type="password" name="admin_pass" required minlength="<?= MIN_PASSWORD ?>" autocomplete="new-password"></label>
+        <label>Correo para recuperar la contraseña (si el usuario no es ya un correo)<input type="email" name="admin_email" maxlength="100"></label>
       </fieldset>
       <fieldset><legend>Mantenedor</legend>
         <label>Usuario<input name="maint_user" required maxlength="100" autocomplete="username"></label>
         <label>Contraseña<input type="password" name="maint_pass" required minlength="<?= MIN_PASSWORD ?>" autocomplete="new-password"></label>
+        <label>Correo para recuperar la contraseña (si el usuario no es ya un correo)<input type="email" name="maint_email" maxlength="100"></label>
       </fieldset>
       <p class="hint">Contraseñas: mínimo <?= MIN_PASSWORD ?> caracteres y 3 tipos (minúsculas, mayúsculas, números, símbolos).</p>
       <button class="btn primary" type="submit">Crear usuarios</button>
@@ -124,10 +130,11 @@ $flashes = flash_take();
     <h1>Acceso</h1>
     <form method="post">
       <?= csrf_field() ?>
-      <label>Usuario<input name="username" required autocomplete="username" autofocus maxlength="100"></label>
+      <label>Usuario o correo<input name="username" required autocomplete="username" autofocus maxlength="100"></label>
       <label>Contraseña<input type="password" name="password" required autocomplete="current-password" maxlength="256"></label>
       <button class="btn primary" type="submit">Entrar</button>
     </form>
+    <p class="login-links"><a href="forgot.php">¿Olvidó su contraseña?</a></p>
   <?php endif; ?>
 </main>
 </body>
