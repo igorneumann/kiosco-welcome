@@ -1,0 +1,287 @@
+:root {
+  --page-bg: #fff;
+  --welcome-color: #00567d;
+  --text-color: #00567d;
+  --line-color: #b3b3b3;
+  --footer-bg: #d5d5d5;
+  --footer-fg: #12100b;
+  --footer-strip: #f5333f;
+  --footer-strip-h: 2.5vh;
+  --footer-title-color: #12100b;
+  --pulse-scale: 1.05;
+  --pulse-duration: 2.4s;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+html { background: var(--page-bg); }
+body {
+  background: transparent;   /* el fondo animado (#bg, z-index -1) debe verse por detrás */
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
+
+img { -webkit-user-drag: none; }
+
+/* ---------- Fondo con latido ---------- */
+#bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: center top / cover no-repeat;
+  transform-origin: center;
+  animation: heartbeat var(--pulse-duration) ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes heartbeat {
+  0%   { transform: scale(1); }
+  14%  { transform: scale(var(--pulse-scale)); }
+  28%  { transform: scale(1); }
+  42%  { transform: scale(var(--pulse-scale)); }
+  70%  { transform: scale(1); }
+  100% { transform: scale(1); }
+}
+
+/* ---------- Encabezado ---------- */
+#header { flex: 0 0 auto; }
+#header img { display: block; width: 100%; height: auto; max-height: 30vh; object-fit: contain; }
+
+/* ---------- Zona central ---------- */
+#main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2.5vh 5vw 2vh;
+  overflow: hidden;
+}
+
+#welcome {
+  flex: 0 0 auto;
+  font-weight: 400;
+  font-size: min(9vw, 5.6vh);
+  line-height: 1.2;
+  letter-spacing: .01em;
+  color: var(--welcome-color);
+  white-space: nowrap;
+  text-align: center;
+  perspective: 600px;
+}
+#welcome-text {
+  display: inline-block;
+  transition: opacity .6s ease, transform .6s ease, filter .6s ease;
+}
+#welcome-text.show { opacity: 1; transform: translateY(0) rotateX(0) scale(1); filter: blur(0); }
+#welcome-text.hide { opacity: 0; transform: translateY(-40%) rotateX(70deg) scale(.9); filter: blur(4px); }
+
+/* Líneas decorativas: se estiran para ocupar el alto disponible */
+.deco {
+  flex: 1 1 0;
+  min-height: 9vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.2vh 0;
+}
+.deco i {
+  flex: 1 1 0;
+  width: max(3px, .45vh);
+  border-radius: 99px;
+  background: var(--line-color);
+}
+.deco b {
+  flex: 0 0 auto;
+  width: max(16px, 2.6vh);
+  height: max(16px, 2.6vh);
+  border-radius: 50%;
+  background: var(--line-color);
+  margin: -.2vh 0;
+}
+.deco[hidden], #center[hidden] { display: none; }
+
+#center {
+  flex: 0 1 auto;
+  max-width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+#center-text {
+  flex: 0 0 auto;
+  color: var(--text-color);
+  font-weight: 500;
+  line-height: 1.15;
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+#center-text.auto {
+  white-space: pre;
+  display: inline-block;
+  max-width: none;
+}
+
+#logo { flex: 0 0 auto; display: flex; justify-content: center; }
+#logo img {
+  display: block;
+  height: min(14vh, 32vw);   /* alto explícito: los SVG sin width/height no tienen tamaño propio */
+  width: auto;
+  max-width: 70vw;
+  object-fit: contain;
+  animation: jiggle 5s ease-in-out infinite;
+  transform-origin: 50% 60%;
+}
+@keyframes jiggle {
+  0%, 16%, 100% { transform: rotate(0) scale(1); }
+  2%  { transform: rotate(-7deg) scale(1.06); }
+  4%  { transform: rotate(6deg)  scale(1.06); }
+  6%  { transform: rotate(-5deg) scale(1.04); }
+  8%  { transform: rotate(4deg)  scale(1.03); }
+  10% { transform: rotate(-2deg) scale(1.01); }
+  12% { transform: rotate(1deg); }
+}
+
+/* ---------- Rodapié ---------- */
+#footer-title {
+  flex: 0 0 auto;
+  text-align: center;
+  color: var(--footer-title-color);
+  font-size: min(2.5vh, 4.2vw);
+  line-height: 1.25;
+  padding: .6vh 4vw 1.4vh;
+}
+#footer-title[hidden] { display: none; }
+#footer {
+  flex: 0 0 auto;
+  background: var(--footer-bg);
+  color: var(--footer-fg);
+  border-bottom: var(--footer-strip-h) solid var(--footer-strip);
+  padding: 2.2vh 3vw calc(2.2vh + env(safe-area-inset-bottom));
+}
+#footer-icons {
+  display: flex;
+  justify-content: space-evenly;
+  align-items: center;
+  gap: 2vw;
+}
+.ficon {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .6vh;
+  padding: .6vh 1.5vw;
+  border-radius: 12px;
+  transition: transform .15s ease, background .15s ease;
+}
+.ficon:active { transform: scale(.93); background: rgba(0,0,0,.06); }
+.ficon img { height: min(11vh, 22vw); width: auto; max-width: 30vw; object-fit: contain; display: block; }
+.ficon svg { width: min(9vh, 16vw); height: min(9vh, 16vw); display: block; }
+.ficon .lbl { font-size: min(2vh, 3.4vw); font-weight: 400; }
+
+/* ---------- Ventanas emergentes ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.72);
+  animation: fadeIn .25s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.overlay .box {
+  position: relative;
+  background: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  max-width: 96vw;
+  max-height: calc(100vh - 16vh);
+  animation: popIn .3s cubic-bezier(.2,.9,.3,1.2);
+}
+@keyframes popIn { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.overlay .box iframe { display: block; width: 100%; border: 0; background: #fff; }
+.overlay .box.video { background: #000; max-width: min(96vw, calc((100vh - 18vh) * 16 / 9)); }
+.overlay .box.video iframe { aspect-ratio: 16 / 9; height: auto; }
+
+.overlay.full { background: #fff; }
+.overlay.full .box { width: 100vw; height: 100vh; height: 100dvh; max-width: none; max-height: none; border-radius: 0; box-shadow: none; animation: none; }
+.overlay.full .box iframe { height: 100%; }
+
+.close {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--font);
+  font-weight: 600;
+  letter-spacing: .03em;
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.35);
+  z-index: 110;
+  transition: transform .12s ease;
+}
+.close:active { transform: scale(.94); }
+.close.flow { margin-top: 2.2vh; }
+.close.fixed { position: fixed; }
+.close.fixed.pos-bottom-center { bottom: 3vh; left: 50%; transform: translateX(-50%); }
+.close.fixed.pos-bottom-center:active { transform: translateX(-50%) scale(.94); }
+.close.fixed.pos-bottom-left  { bottom: 3vh; left: 3vw; }
+.close.fixed.pos-bottom-right { bottom: 3vh; right: 3vw; }
+.close.fixed.pos-top-left     { top: 3vh; left: 3vw; }
+.close.fixed.pos-top-right    { top: 3vh; right: 3vw; }
+.close.size-small  { font-size: 16px; padding: 10px 22px; }
+.close.size-medium { font-size: 22px; padding: 14px 34px; }
+.close.size-large  { font-size: 30px; padding: 20px 56px; }
+.close.size-xlarge { font-size: 40px; padding: 26px 80px; }
+
+/* ---------- Recarga ---------- */
+#reloading {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.85);
+}
+#reloading[hidden] { display: none; }
+#reloading span {
+  width: 60px; height: 60px; border-radius: 50%;
+  border: 6px solid #ddd; border-top-color: #009fe3;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Pantallas apaisadas: el diseño original es vertical (1080×1920); se compacta para dejar sitio al texto */
+@media (orientation: landscape) {
+  #header img { max-height: 22vh; }
+  .deco { min-height: 6vh; padding: .6vh 0; }
+  #logo img { height: 11vh; }
+  .ficon img { height: 10vh; }
+  #main { padding-top: 1.5vh; }
+}

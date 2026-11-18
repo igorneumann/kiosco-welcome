@@ -1,0 +1,134 @@
+<?php
+declare(strict_types=1);
+require __DIR__ . '/inc/bootstrap.php';
+
+session_boot();
+security_headers();
+
+if (current_user()) {
+    redirect('admin.php');
+}
+
+$setupMode = !users_exist();
+$error = '';
+$ip = client_ip();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
+
+    if ($setupMode) {
+        /* ---------- Instalación inicial ---------- */
+        $wait = throttle_wait($ip, '');
+        $key  = (string)($_POST['setup_key'] ?? '');
+        if ($wait > 0) {
+            $error = 'Demasiados intentos. Espere ' . ceil($wait / 60) . ' min.';
+        } elseif (SETUP_KEY === 'CAMBIAR-ESTA-CLAVE' || strlen(SETUP_KEY) < 12) {
+            $error = 'Edite inc/settings.php y cambie SETUP_KEY (mín. 12 caracteres) antes de instalar.';
+        } elseif (!hash_equals(SETUP_KEY, $key)) {
+            throttle_fail($ip, '');
+            auth_log('setup_fail');
+            sleep(1);
+            $error = 'Clave de instalación incorrecta.';
+        } else {
+            $au = post_str('admin_user', 32);
+            $ap = (string)($_POST['admin_pass'] ?? '');
+            $mu = post_str('maint_user', 32);
+            $mp = (string)($_POST['maint_pass'] ?? '');
+            if (!username_valid($au) || !username_valid($mu)) {
+                $error = 'Usuarios: 3–32 caracteres (letras, números, punto, guion).';
+            } elseif (strcasecmp($au, $mu) === 0) {
+                $error = 'Los dos usuarios deben ser distintos.';
+            } elseif ($p = password_problem($ap, $au) ?? password_problem($mp, $mu)) {
+                $error = $p;
+            } else {
+                users_update(function (array &$users) use ($au, $ap, $mu, $mp) {
+                    if ($users) { return; } // carrera: ya instalado
+                    $users[] = ['username' => $au, 'role' => 'admin', 'hash' => password_make($ap)];
+                    $users[] = ['username' => $mu, 'role' => 'maintainer', 'hash' => password_make($mp)];
+                });
+                auth_log('setup_ok', $au);
+                $_SESSION['flash'][] = ['ok', 'Instalación completada. Inicie sesión.'];
+                redirect('index.php');
+            }
+        }
+    } else {
+        /* ---------- Inicio de sesión ---------- */
+        $user = post_str('username', 64);
+        $pass = (string)($_POST['password'] ?? '');
+        $pass = mb_substr($pass, 0, 256);
+        $wait = throttle_wait($ip, $user);
+
+        if ($wait > 0) {
+            auth_log('blocked', $user);
+            $error = 'Demasiados intentos fallidos. Inténtelo de nuevo en ' . ceil($wait / 60) . ' min.';
+        } else {
+            $u  = user_find($user);
+            $ok = password_verify($pass, $u['hash'] ?? DUMMY_HASH) && $u !== null;
+            if ($ok) {
+                throttle_clear($ip, $user);
+                if (password_needs_rehash($u['hash'], defined('PASSWORD_ARGON2ID') ? PASSWORD_ARGON2ID : PASSWORD_DEFAULT)) {
+                    $newHash = password_make($pass);
+                    users_update(function (array &$users) use ($u, $newHash) {
+                        foreach ($users as &$x) {
+                            if ($x['username'] === $u['username']) { $x['hash'] = $newHash; }
+                        }
+                    });
+                    $u['hash'] = $newHash;
+                }
+                login_user($u);
+                auth_log('login_ok', $u['username']);
+                redirect('admin.php');
+            }
+            throttle_fail($ip, $user);
+            auth_log('login_fail', $user);
+            sleep(1);
+            $error = 'Usuario o contraseña incorrectos.';
+        }
+    }
+}
+
+$flashes = flash_take();
+?><!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Acceso · Welcome Bezares</title>
+<link rel="stylesheet" href="assets/admin.css">
+</head>
+<body class="login-page">
+<main class="login-card">
+  <img class="login-logo" src="<?= e(config_get()['default_logo']) ?>" alt="Bezares">
+  <?php foreach ($flashes as [$t, $m]): ?><p class="msg <?= e($t) ?>"><?= e($m) ?></p><?php endforeach; ?>
+  <?php if ($error): ?><p class="msg err"><?= e($error) ?></p><?php endif; ?>
+
+  <?php if ($setupMode): ?>
+    <h1>Instalación inicial</h1>
+    <p class="hint">Cree el usuario administrador y el usuario mantenedor. Necesita la clave definida en <code>inc/settings.php</code>.</p>
+    <form method="post" autocomplete="off">
+      <?= csrf_field() ?>
+      <label>Clave de instalación<input type="password" name="setup_key" required></label>
+      <fieldset><legend>Administrador</legend>
+        <label>Usuario<input name="admin_user" required pattern="[a-zA-Z0-9._\-]{3,32}"></label>
+        <label>Contraseña<input type="password" name="admin_pass" required minlength="<?= MIN_PASSWORD ?>" autocomplete="new-password"></label>
+      </fieldset>
+      <fieldset><legend>Mantenedor</legend>
+        <label>Usuario<input name="maint_user" required pattern="[a-zA-Z0-9._\-]{3,32}"></label>
+        <label>Contraseña<input type="password" name="maint_pass" required minlength="<?= MIN_PASSWORD ?>" autocomplete="new-password"></label>
+      </fieldset>
+      <p class="hint">Contraseñas: mínimo <?= MIN_PASSWORD ?> caracteres y 3 tipos (minúsculas, mayúsculas, números, símbolos).</p>
+      <button class="btn primary" type="submit">Crear usuarios</button>
+    </form>
+  <?php else: ?>
+    <h1>Acceso</h1>
+    <form method="post">
+      <?= csrf_field() ?>
+      <label>Usuario<input name="username" required autocomplete="username" autofocus maxlength="64"></label>
+      <label>Contraseña<input type="password" name="password" required autocomplete="current-password" maxlength="256"></label>
+      <button class="btn primary" type="submit">Entrar</button>
+    </form>
+  <?php endif; ?>
+</main>
+</body>
+</html>
