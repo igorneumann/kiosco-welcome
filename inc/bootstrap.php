@@ -125,6 +125,58 @@ function users_update(callable $fn): void
     }, ['users' => []]);
 }
 
+/** Correo de un usuario: el campo email o, si el nombre de usuario es un correo, ese mismo. */
+function user_email(array $u): string
+{
+    $e = (string)($u['email'] ?? '');
+    if ($e === '' && filter_var($u['username'], FILTER_VALIDATE_EMAIL)) {
+        $e = $u['username'];
+    }
+    return $e;
+}
+
+/** Busca por nombre de usuario o por correo (sin distinguir mayúsculas). */
+function user_find_login(string $id): ?array
+{
+    $u = user_find($id);
+    if ($u) {
+        return $u;
+    }
+    foreach (users_all() as $x) {
+        $e = user_email($x);
+        if ($e !== '' && hash_equals(mb_strtolower($e), mb_strtolower($id))) {
+            return $x;
+        }
+    }
+    return null;
+}
+
+function email_valid(string $e): bool
+{
+    return $e === '' || (strlen($e) <= 100 && filter_var($e, FILTER_VALIDATE_EMAIL) !== false);
+}
+
+/** Envía el correo con el enlace de recuperación. Devuelve false si el servidor no lo acepta. */
+function send_reset_mail(string $to, string $username, string $link): bool
+{
+    $minutes = (int)(RESET_TTL / 60);
+    $subject = '=?UTF-8?B?' . base64_encode('Welcome Bezares · Cambiar contraseña / Reset password') . '?=';
+    $body = "Hola {$username}:\r\n\r\n"
+          . "Se ha solicitado cambiar la contraseña del panel del kiosco welcome.bezares.com.\r\n"
+          . "Abra este enlace (válido {$minutes} minutos, un solo uso):\r\n\r\n{$link}\r\n\r\n"
+          . "Si no lo ha solicitado usted, ignore este mensaje: su contraseña no cambiará.\r\n\r\n"
+          . "---\r\n"
+          . "A password reset was requested for the welcome.bezares.com kiosk panel.\r\n"
+          . "Open the link above within {$minutes} minutes. If it wasn't you, ignore this email.\r\n";
+    $fromName = '=?UTF-8?B?' . base64_encode(MAIL_FROM_NAME) . '?=';
+    $headers = "From: {$fromName} <" . MAIL_FROM . ">\r\n"
+             . "MIME-Version: 1.0\r\n"
+             . "Content-Type: text/plain; charset=UTF-8\r\n"
+             . "Content-Transfer-Encoding: 8bit\r\n"
+             . "Auto-Submitted: auto-generated\r\n";
+    return @mail($to, $subject, $body, $headers, '-f' . MAIL_FROM);
+}
+
 function password_make(string $plain): string
 {
     return defined('PASSWORD_ARGON2ID')

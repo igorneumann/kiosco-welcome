@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = post_str('action', 40);
     $anchor = '';
 
-    $adminOnly = ['save_general', 'upload_header', 'remove_header', 'upload_background', 'remove_background',
+    $adminOnly = ['user_email', 'save_general', 'upload_header', 'remove_header', 'upload_background', 'remove_background',
                   'upload_default_logo', 'save_icon', 'add_icon', 'delete_icon', 'move_icon',
                   'user_add', 'user_password', 'user_delete', 'reset_all'];
     if (in_array($action, $adminOnly, true) && !$isAdmin) {
@@ -248,12 +248,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $un = post_str('username', 100);
                 $pw = (string)($_POST['password'] ?? '');
                 $role = post_enum('role', ['admin', 'maintainer'], 'maintainer');
+                $em = post_str('email', 100);
+                if (!email_valid($em)) { throw new RuntimeException('El correo no es válido.'); }
                 if (!username_valid($un)) { throw new RuntimeException('Usuario: una dirección de correo o 3–64 caracteres (letras, números, punto, guion).'); }
                 if (user_find($un)) { throw new RuntimeException('Ese usuario ya existe.'); }
                 if ($p = password_problem($pw, $un)) { throw new RuntimeException($p); }
                 $hash = password_make($pw);
-                users_update(function (array &$users) use ($un, $role, $hash) {
-                    $users[] = ['username' => $un, 'role' => $role, 'hash' => $hash];
+                users_update(function (array &$users) use ($un, $role, $hash, $em) {
+                    $users[] = ['username' => $un, 'role' => $role, 'hash' => $hash, 'email' => $em];
                 });
                 auth_log('user_add:' . $role, $un);
                 flash('Usuario creado.');
@@ -272,6 +274,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($un === $me['username']) { $_SESSION['pwfp'] = password_fingerprint($hash); }
                 auth_log('password_reset', $un);
                 flash('Contraseña de ' . $un . ' cambiada.');
+                break;
+
+            case 'user_email':
+                $anchor = 'usuarios';
+                $un = post_str('username', 100);
+                $em = post_str('email', 100);
+                if (!user_find($un)) { throw new RuntimeException('Usuario no encontrado.'); }
+                if (!email_valid($em)) { throw new RuntimeException('El correo no es válido.'); }
+                users_update(function (array &$users) use ($un, $em) {
+                    foreach ($users as &$u) { if ($u['username'] === $un) { $u['email'] = $em; } }
+                });
+                auth_log('user_email_changed', $un);
+                flash('Correo de ' . $un . ' guardado.');
                 break;
 
             case 'user_delete':
@@ -527,12 +542,16 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
 <section id="usuarios" class="card">
   <h2>Usuarios</h2>
   <table class="users">
-    <thead><tr><th>Usuario</th><th>Rol</th><th>Nueva contraseña</th><th></th></tr></thead>
+    <thead><tr><th>Usuario</th><th>Rol</th><th>Correo de recuperación</th><th>Nueva contraseña</th><th></th></tr></thead>
     <tbody>
     <?php foreach (users_all() as $u): ?>
       <tr>
         <td><?= e($u['username']) ?></td>
         <td><?= $u['role'] === 'admin' ? 'Administrador' : 'Mantenedor' ?></td>
+        <td>
+          <form method="post" class="inline-form"><?= csrf_field() ?><input type="hidden" name="action" value="user_email"><input type="hidden" name="username" value="<?= e($u['username']) ?>">
+            <input type="email" name="email" maxlength="100" value="<?= e($u['email'] ?? '') ?>" placeholder="<?= e(user_email($u) ?: 'sin correo') ?>"><button class="btn small">Guardar</button></form>
+        </td>
         <td>
           <form method="post" class="inline-form"><?= csrf_field() ?><input type="hidden" name="action" value="user_password"><input type="hidden" name="username" value="<?= e($u['username']) ?>">
             <input type="password" name="password" minlength="<?= MIN_PASSWORD ?>" required autocomplete="new-password"><button class="btn small">Cambiar</button></form>
@@ -549,10 +568,12 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     <?= csrf_field() ?><input type="hidden" name="action" value="user_add">
     <input name="username" placeholder="usuario o correo" required maxlength="100" autocomplete="username">
     <input type="password" name="password" placeholder="contraseña" required minlength="<?= MIN_PASSWORD ?>" autocomplete="new-password">
+    <input type="email" name="email" placeholder="correo de recuperación (opcional)" maxlength="100">
     <select name="role"><option value="maintainer">Mantenedor</option><option value="admin">Administrador</option></select>
     <button class="btn primary">Crear</button>
   </form>
-  <p class="hint">Contraseñas: mínimo <?= MIN_PASSWORD ?> caracteres y 3 tipos (minúsculas, mayúsculas, números, símbolos).</p>
+  <p class="hint">Contraseñas: mínimo <?= MIN_PASSWORD ?> caracteres y 3 tipos (minúsculas, mayúsculas, números, símbolos).
+    El enlace de «¿Olvidó su contraseña?» se envía al correo de recuperación; si está vacío y el usuario es un correo, se usa ese.</p>
 </section>
 
 <section id="peligro" class="card warn">
