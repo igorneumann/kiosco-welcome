@@ -1,0 +1,7 @@
+# Datos de ejecución (usuarios, configuración, sesiones, registros)
+data/*
+!data/.htaccess
+!data/index.php
+# Imágenes subidas desde el panel
+uploads/*
+!uploads/.htaccess

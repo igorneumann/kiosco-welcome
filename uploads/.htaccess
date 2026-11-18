@@ -1,0 +1,15 @@
+# Solo se sirven imágenes; nunca se ejecuta código
+Options -Indexes -ExecCGI
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .php8 .phar .pl .py .cgi .shtml
+RemoveType .php .phtml .php3 .php4 .php5 .php7 .php8 .phar
+<FilesMatch ".*">
+  Require all denied
+</FilesMatch>
+<FilesMatch "^[a-z]+-[a-f0-9]{16}\.(png|jpg|gif|webp|svg)$">
+  Require all granted
+</FilesMatch>
+AddType image/svg+xml .svg
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set Content-Security-Policy "default-src 'none'; sandbox"
+</IfModule>

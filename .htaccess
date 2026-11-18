@@ -1,0 +1,57 @@
+# welcome.bezares.com — kiosco
+Options -Indexes -MultiViews
+DirectoryIndex index.php
+ServerSignature Off
+
+# ---------- HTTPS obligatorio y bloqueo de carpetas internas ----------
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+  RewriteRule ^(inc|data)(/|$) - [F,L]
+  # Archivos/carpetas ocultos (excepto .well-known, necesario para el SSL automático de cPanel)
+  RewriteCond %{REQUEST_URI} !^/\.well-known/
+  RewriteRule (^|/)\. - [F,L]
+</IfModule>
+
+AddType image/svg+xml .svg
+
+# Archivos que nunca deben servirse
+<FilesMatch "\.(json|log|lock|md|bak|sql|ini|sh|dist)$|^\.">
+  Require all denied
+</FilesMatch>
+
+# ---------- Cabeceras ----------
+<IfModule mod_headers.c>
+  Header always set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "same-origin"
+  Header always set Strict-Transport-Security "max-age=31536000" "expr=%{HTTPS} == 'on'"
+  Header always unset X-Powered-By
+
+  # Sin caché persistente para la página del kiosco y sus recursos (se revalidan siempre)
+  <FilesMatch "\.(html|js|css)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+
+  # Seguridad de la página del kiosco
+  <Files "VXM7D4mGu83ERwJC.html">
+    Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src https: http:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; object-src 'none'"
+    Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  </Files>
+
+  # Las imágenes subidas llevan nombre único: se pueden cachear
+  <FilesMatch "\.(png|jpe?g|gif|webp|svg)$">
+    Header set Cache-Control "public, max-age=2592000"
+  </FilesMatch>
+</IfModule>
+
+# Límite de subida (si el hosting usa mod_php; en cPanel con PHP-FPM ajústelo en "MultiPHP INI Editor")
+<IfModule mod_php.c>
+  php_value upload_max_filesize 8M
+  php_value post_max_size 10M
+  php_flag expose_php Off
+</IfModule>
