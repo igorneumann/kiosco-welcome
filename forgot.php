@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/inc/bootstrap.php';
 
+require_allowed_ip();
 session_boot();
 security_headers();
 
@@ -16,7 +17,7 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $id = post_str('username', 100);
-    $wait = throttle_wait('reset:' . $ip, '');
+    $wait = throttle_wait(['reset:' . $ip]);
 
     if ($wait > 0) {
         $error = 'Demasiadas solicitudes. Inténtelo de nuevo en ' . ceil($wait / 60) . ' min.';
@@ -24,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Indique su usuario o correo.';
     } else {
         // Cada solicitud cuenta para el límite por IP (5 cada 15 min), exista o no el usuario.
-        throttle_fail('reset:' . $ip, '');
+        throttle_fail(['reset:' . $ip => 5]);
         $u = user_find_login($id);
         $email = $u ? user_email($u) : '';
 
@@ -41,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($r['count'] >= RESET_MAX_PER_HOUR) { return false; }
                 $r['count']++;
                 $r['hash'] = hash('sha256', $token);
+                $r['pwfp'] = password_fingerprint($u['hash']); // el enlace caduca si la contraseña cambia por otra vía
                 $r['expires'] = $now + RESET_TTL;
                 $d[$key] = $r;
                 return true;

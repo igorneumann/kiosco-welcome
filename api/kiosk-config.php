@@ -10,15 +10,21 @@ header('X-Content-Type-Options: nosniff');
 header('X-Robots-Tag: noindex, nofollow');
 
 $c = config_get();
+$domains = frame_domains_parse($c['frame_domains']);
 
 $icons = [];
 foreach ($c['icons'] as $ic) {
+    $isYt = $ic['type'] === 'youtube';
+    // Comprobación también al servir: una URL guardada antes de cambiar la lista deja de abrirse.
+    $blocked = !$isYt && frame_url_problem((string)$ic['url'], $domains) !== null;
     $icons[] = [
+        'blocked'        => $blocked,
+        'allow_same_origin' => !empty($ic['allow_same_origin']),
         'label'          => (string)$ic['label'],
         'icon'           => in_array($ic['icon'], BUILTIN_ICONS, true) ? $ic['icon'] : 'info',
         'icon_image'     => (string)$ic['icon_image'],
         'type'           => $ic['type'] === 'youtube' ? 'youtube' : 'url',
-        'url'            => (string)$ic['url'],
+        'url'            => $blocked ? '' : (string)$ic['url'],
         'youtube_id'     => (string)$ic['youtube_id'],
         'display'        => $ic['display'] === 'fullscreen' ? 'fullscreen' : 'popup',
         'width'          => (string)$ic['width'],
@@ -33,6 +39,7 @@ foreach ($c['icons'] as $ic) {
 
 echo json_encode([
     'version'           => $c['version'],
+    'frame_domains'     => $domains,
     'header_image'      => $c['header_image'],
     'background_image'  => $c['background_image'],
     'welcome_texts'     => array_values($c['welcome_texts']),

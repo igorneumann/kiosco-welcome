@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/inc/bootstrap.php';
 
+require_allowed_ip();
 session_boot();
 security_headers();
 
@@ -19,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = post_str('action', 40);
     $anchor = '';
 
-    $adminOnly = ['user_email', 'save_general', 'upload_header', 'remove_header', 'upload_background', 'remove_background',
+    $adminOnly = ['save_frame_domains', 'user_email', 'save_general', 'upload_header', 'remove_header', 'upload_background', 'remove_background',
                   'upload_default_logo', 'save_icon', 'add_icon', 'delete_icon', 'move_icon',
                   'user_add', 'user_password', 'user_delete', 'reset_all'];
     if (in_array($action, $adminOnly, true) && !$isAdmin) {
@@ -164,6 +165,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 flash('Imagen quitada.');
                 break;
 
+            case 'save_frame_domains':
+                $anchor = 'iconos';
+                $list = frame_domains_parse(post_str('frame_domains', 2000));
+                config_update(function (array &$c) use ($list) {
+                    $c['frame_domains'] = implode("\n", $list);
+                });
+                flash('Dominios permitidos guardados (' . count($list) . ').');
+                break;
+
             case 'add_icon':
                 $anchor = 'iconos';
                 config_update(function (array &$c) {
@@ -225,7 +235,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $ic['url'] = 'https://youtu.be/' . $yid;
                     } else {
                         $url = parse_url_or_iframe($raw);
-                        if ($url === '') { throw new RuntimeException('La dirección (URL o código iframe) no es válida.'); }
+                        if ($url === '') { throw new RuntimeException('La dirección (URL o código iframe) no es válida. Debe empezar por https://'); }
+                        if ($why = frame_url_problem($url, frame_domains_parse($c['frame_domains']))) { throw new RuntimeException($why); }
                         $ic['url'] = $url;
                         $ic['youtube_id'] = '';
                         // Si se pegó un iframe con altura, la tomamos
@@ -242,6 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $ic['close_fg']       = post_color('close_fg', '#ffffff');
                     $ic['close_position'] = post_enum('close_position', ['bottom-center', 'top-right', 'top-left', 'bottom-right', 'bottom-left'], 'bottom-center');
                     $ic['close_size']     = post_enum('close_size', ['small', 'medium', 'large', 'xlarge'], 'large');
+                    $ic['allow_same_origin'] = !empty($_POST['allow_same_origin']);
                     $c['icons'][$idx] = $ic;
                 });
                 flash($action === 'delete_icon' ? 'Icono eliminado.' : ($action === 'move_icon' ? 'Orden actualizado.' : 'Icono guardado.'));
@@ -366,6 +378,10 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
   <?php if ($isAdmin): ?><a href="#apariencia">Apariencia</a><a href="#iconos">Iconos</a><a href="#usuarios">Usuarios</a><?php endif; ?>
   <a href="#cuenta">Mi cuenta</a>
 </nav>
+<?php if ($isAdmin && data_dir_is_public()): ?>
+  <p class="msg err banner">Seguridad: la carpeta de datos (usuarios, contraseñas, registros) está dentro de la web.
+  Muévala fuera de public_html dejando <code>DATA_DIR</code> vacío o con una ruta como <code>/home/USUARIO/welcome-kiosk-data</code> en <code>inc/settings.php</code>.</p>
+<?php endif; ?>
 
 <div class="layout">
 <div class="col-main">
@@ -539,6 +555,9 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
           <label>Color botón<input type="color" name="close_bg" value="<?= e($ic['close_bg']) ?>"></label>
           <label>Texto botón<input type="color" name="close_fg" value="<?= e($ic['close_fg']) ?>"></label>
         </div>
+        <label class="radio"><input type="checkbox" name="allow_same_origin" value="1"<?= !empty($ic['allow_same_origin']) ? ' checked' : '' ?>>
+          Permitir cookies y almacenamiento de la página incrustada (<code>allow-same-origin</code>)</label>
+        <p class="hint">Déjelo desmarcado salvo que la página lo necesite (formularios con sesión, reproductor de YouTube). Nunca se aplica a páginas del propio kiosco, que están prohibidas.</p>
         <button class="btn primary">Guardar icono</button>
       </form>
     </div>
@@ -547,6 +566,15 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="add_icon"><button class="btn">+ Añadir icono</button></form>
   <?php endif; ?>
   <p class="hint">Nota: algunas webs impiden mostrarse dentro de un iframe (cabecera X-Frame-Options/CSP). Si una página sale en blanco, debe permitirlo su servidor.</p>
+
+  <h3>Dominios permitidos en las ventanas</h3>
+  <form method="post">
+    <?= csrf_field() ?><input type="hidden" name="action" value="save_frame_domains">
+    <label>Un dominio por línea. <code>bezares.com</code> = ese dominio exacto; <code>*.bezares.com</code> = cualquier subdominio.
+      Solo https. El propio kiosco, las IP y los nombres de red local están siempre prohibidos.
+      <textarea name="frame_domains" rows="4"><?= e($c['frame_domains']) ?></textarea></label>
+    <button class="btn primary">Guardar dominios</button>
+  </form>
 </section>
 
 <!-- ============ USUARIOS (admin) ============ -->
