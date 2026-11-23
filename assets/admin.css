@@ -214,3 +214,33 @@ main.app { flex: 1; min-width: 0; padding: 28px 32px 60px; box-sizing: border-bo
 /* En el panel del administrador el título de la página ya nombra la sección */
 .shell-body #iconos > h2:first-child, .shell-body #usuarios > h2:first-child, .shell-body #oscuro > h2:first-child { display: none; }
 @media (max-width: 1100px) { .shell-body .col-preview { order: 0; max-width: 420px; } }
+
+/* Estadísticas */
+.stats-filter { display: flex; flex-direction: column; gap: 6px; }
+.stats-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 0 14px; }
+.stats-row label { margin-bottom: 6px; }
+.stats-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.stats-range { margin: 0 0 14px; font-size: 15px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; margin-bottom: 4px; }
+.kpi-grid .card { margin-bottom: 0; }
+.kpi { display: flex; flex-direction: column; gap: 4px; }
+.kpi-title { font-size: 13px; font-weight: 600; color: var(--muted, #667085); }
+.kpi-val { font-size: 32px; line-height: 1.1; color: var(--brand, #00567d); font-weight: 700; }
+.kpi-cmp { font-size: 13px; color: var(--muted, #667085); }
+.kpi .hint { font-size: 12px; margin: 0; }
+.delta { display: inline-block; font-weight: 700; border-radius: 999px; padding: 1px 8px; font-size: 12px; background: #eef1f4; color: #475467; }
+.delta.up { background: #e0f3e7; color: #1d6a3c; }
+.delta.down { background: #fdecec; color: #a12626; }
+.kpi-grid + .card { margin-top: 16px; }
+.chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.chart-head h2 { margin: 0; }
+.legend { font-size: 13px; color: var(--muted, #667085); display: inline-flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.sw.cur { background: #00567d; } .sw.cmp { background: #c7d0d9; margin-left: 10px; }
+svg.chart { display: block; width: 100%; height: auto; }
+.stats-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.stats-two .card { margin-bottom: 16px; }
+.stats-table td, .stats-table th { white-space: nowrap; }
+.table-card { overflow-x: auto; }
+.shell-body .layout.single:has(#estadisticas) { max-width: 1200px; }
+@media (max-width: 900px) { .stats-row, .stats-two { grid-template-columns: 1fr; } }

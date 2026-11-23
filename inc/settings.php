@@ -13,6 +13,9 @@ const SETUP_KEY = 'CAMBIAR-ESTA-CLAVE';
 // Dirección pública del sitio (se usa en el enlace del correo de recuperación; nunca se toma de la petición)
 const BASE_URL = 'https://welcome.bezares.com';
 
+// Zona horaria (fechas de las estadísticas y de los registros)
+const TIMEZONE = 'Europe/Madrid';
+
 // Remitente de los correos de recuperación de contraseña (debe ser un buzón del dominio para que no acabe en spam)
 const MAIL_FROM = 'no-reply@bezares.com';
 const MAIL_FROM_NAME = 'Welcome Bezares';

@@ -23,6 +23,7 @@ return [
     'bg_pulse_scale'     => 1.05,       // 1.00 = sin pulso
     'bg_pulse_duration'  => 2.4,        // segundos por latido
     'popup_idle_close'   => 0,          // segundos; 0 = desactivado
+    'mailing_kiosk_secs' => 5,          // segundos que Bezares Mailing muestra el mensaje tras un alta (modo kiosco)
 
     // Tema oscuro (lo activa el mantenedor; los valores los define el administrador)
     'dark' => [

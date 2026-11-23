@@ -17,6 +17,17 @@
     });
   });
 
+  // Estadísticas: al tocar una fecha el periodo pasa a «Personalizado»; sin comparación se desactivan sus fechas
+  var sf = document.querySelector('[data-stats-filter]');
+  if (sf) {
+    var preset = sf.querySelector('[data-preset]'), cmp = sf.querySelector('[data-cmp]');
+    sf.querySelectorAll('[data-custom="preset"]').forEach(function (i) { i.addEventListener('change', function () { preset.value = 'custom'; }); });
+    sf.querySelectorAll('[data-custom="cmp"]').forEach(function (i) { i.addEventListener('change', function () { cmp.value = 'custom'; }); });
+    var syncCmp = function () { sf.querySelectorAll('[data-custom="cmp"]').forEach(function (i) { i.disabled = cmp.value === 'none'; }); };
+    cmp.addEventListener('change', syncCmp);
+    preset.addEventListener('change', function () { if (preset.value !== 'custom') sf.submit(); });
+  }
+
   // Evitar doble envío
   document.querySelectorAll('form').forEach(function (f) {
     f.addEventListener('submit', function (e) {

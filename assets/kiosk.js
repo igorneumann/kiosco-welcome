@@ -11,6 +11,49 @@
   var modal = null, pending = null, idleTimer = null;
   var $ = function (s) { return document.querySelector(s); };
 
+  /* ---------------- Estadísticas de interacción ---------------- */
+  // Eventos agregados (sin datos personales) para la página de estadísticas del panel.
+  // La vista previa del panel (?preview=1) no cuenta.
+  var PREVIEW = /[?&]preview=1/.test(location.search);
+  var started = false;
+  function track(e, extra) {
+    if (PREVIEW || !cfg || !cfg.track) return;
+    var body = { t: cfg.track, e: e };
+    for (var k in extra) body[k] = extra[k];
+    var data = JSON.stringify(body);
+    try {
+      if (navigator.sendBeacon && navigator.sendBeacon('api/track.php', new Blob([data], { type: 'application/json' }))) return;
+    } catch (err) {}
+    try { fetch('api/track.php', { method: 'POST', body: data, keepalive: true, credentials: 'omit', headers: { 'Content-Type': 'application/json' } }); } catch (err) {}
+  }
+
+  // Suscripciones a la newsletter (formulario de Bezares Mailing incrustado):
+  //  1) Aviso explícito: Bezares Mailing ≥ 2.18 envía postMessage {bezaresMailingEvent:'subscribe'} al confirmar el alta.
+  //  2) Si la versión instalada aún no lo envía: en modo kiosco, tras un alta el formulario muestra el mensaje
+  //     y se recarga solo a los N segundos (ajuste «segundos del mensaje» de Bezares Mailing). Una recarga del
+  //     iframe a ese intervalo exacto indica que la página anterior era la confirmación de un alta.
+  //     Se desactiva en cuanto se recibe un aviso explícito.
+  var mail = null; // { win, icon, isMailing, lastLoad }
+  var explicitMail = false;
+  try { explicitMail = localStorage.getItem('wk-mail-events') === '1'; } catch (e) {}
+  window.addEventListener('message', function (e) {
+    if (!mail || e.source !== mail.win || !e.data) return;
+    if (typeof e.data.bezaresMailingHeight === 'number') mail.isMailing = true;
+    if (e.data.bezaresMailingEvent === 'subscribe') {
+      if (!explicitMail) { explicitMail = true; try { localStorage.setItem('wk-mail-events', '1'); } catch (err) {} }
+      track('nl', { i: mail.icon });
+    }
+  });
+  function mailFrameLoaded() {
+    if (!mail) return;
+    var now = Date.now(), k = (cfg && cfg.mailing_kiosk_secs) || 5;
+    if (!explicitMail && mail.isMailing && mail.lastLoad) {
+      var dt = (now - mail.lastLoad) / 1000;
+      if (dt >= k - 1.5 && dt <= k + 3) track('nl', { i: mail.icon });
+    }
+    mail.lastLoad = now;
+  }
+
   /* ---------------- Carga de configuración ---------------- */
   function load() {
     return fetch(API + '?t=' + Date.now(), { cache: 'no-store', credentials: 'omit' })
@@ -205,6 +248,9 @@
   function openModal(ic) {
     closeModal();
     if (ic.blocked || (ic.type !== 'youtube' && !frameUrlOk(ic.url))) return;
+    track('open', { i: ic.id });
+    openedAt = Date.now();
+    openedIcon = ic.id;
     var full = ic.display === 'fullscreen';
     var ov = document.createElement('div');
     ov.className = 'overlay ' + (full ? 'full' : 'popup');
@@ -248,20 +294,30 @@
     btn.textContent = ic.close_text || '✕';
     btn.style.background = ic.close_bg || '#e30613';
     btn.style.color = ic.close_fg || '#fff';
-    btn.addEventListener('click', closeModal);
+    btn.addEventListener('click', function () { closeModal('button'); });
     ov.appendChild(btn);
 
     if (!full) {
-      ov.addEventListener('click', function (e) { if (e.target === ov) closeModal(); });
+      ov.addEventListener('click', function (e) { if (e.target === ov) closeModal('backdrop'); });
     }
     ov.addEventListener('pointerdown', bumpIdle);
     document.body.appendChild(ov);
     modal = ov;
+    if (ic.type !== 'youtube') {
+      mail = { win: fr.contentWindow, icon: ic.id, isMailing: false, lastLoad: 0 };
+      fr.addEventListener('load', mailFrameLoaded);
+    }
     bumpIdle();
   }
 
-  function closeModal() {
+  var openedAt = 0, openedIcon = '';
+  function closeModal(reason) {
     clearTimeout(idleTimer);
+    if (modal && openedIcon) {
+      track('close', { i: openedIcon, d: Math.round((Date.now() - openedAt) / 1000), r: typeof reason === 'string' ? reason : 'button' });
+      openedIcon = '';
+    }
+    mail = null;
     if (modal) { modal.remove(); modal = null; }
     if (pending) { var p = pending; pending = null; apply(p); }
   }
@@ -269,7 +325,7 @@
   function bumpIdle() {
     clearTimeout(idleTimer);
     if (modal && cfg && cfg.popup_idle_close > 0) {
-      idleTimer = setTimeout(closeModal, cfg.popup_idle_close * 1000);
+      idleTimer = setTimeout(function () { closeModal('idle'); }, cfg.popup_idle_close * 1000);
     }
   }
   // Al tocar dentro del iframe la ventana pierde el foco: lo contamos como actividad
@@ -289,6 +345,7 @@
   });
 
   function hardReload() {
+    track('reload', {});
     $('#reloading').hidden = false;
     var tasks = [];
     try { localStorage.removeItem(CACHE_KEY); } catch (e) {}
@@ -315,7 +372,7 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
 
   function start() {
-    load().then(function (c) { saveLocal(c); apply(c); })
+    load().then(function (c) { saveLocal(c); apply(c); if (!started) { started = true; track('start', {}); } })
       .catch(function () {
         var local = readLocal();
         if (local && !cfg) apply(local);

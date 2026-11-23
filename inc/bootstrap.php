@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/settings.php';
+require_once __DIR__ . '/stats.php';
 
 define('APP_ROOT', dirname(__DIR__));
 define('UPLOAD_DIR', APP_ROOT . '/uploads');
@@ -10,6 +11,7 @@ define('DUMMY_HASH', '$2y$10$dM7.G7jzmD3TCXk.K/MZj.vqRrrMkGJFteSdPVJh4/aHtiW1d/I
 const BUILTIN_ICONS = ['globe', 'mail', 'play', 'video', 'info', 'phone', 'map', 'doc', 'star', 'home', 'link', 'calendar'];
 
 ini_set('display_errors', '0');
+date_default_timezone_set(defined('TIMEZONE') ? TIMEZONE : 'Europe/Madrid');
 error_reporting(E_ALL);
 
 /* ---------------------------------------------------------------- *

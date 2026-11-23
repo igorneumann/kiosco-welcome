@@ -156,6 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $c['bg_pulse_scale']    = post_num('bg_pulse_scale', 1, 1.3, $d['bg_pulse_scale']);
                     $c['bg_pulse_duration'] = post_num('bg_pulse_duration', 0.5, 10, $d['bg_pulse_duration']);
                     $c['popup_idle_close']  = (int)post_num('popup_idle_close', 0, 3600, 0);
+                    $c['mailing_kiosk_secs'] = (int)post_num('mailing_kiosk_secs', 2, 120, 5);
                 });
                 flash('Apariencia guardada.');
                 break;
@@ -423,6 +424,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 /* ================================================================
+ *  Exportación CSV de estadísticas (administrador)
+ * ================================================================ */
+if ($isAdmin && ($_GET['p'] ?? '') === 'estadisticas' && isset($_GET['csv'])) {
+    $per = stats_periods($_GET);
+    $cur = stats_query($per['from'], $per['to']);
+    $cfg = config_get();
+    $ids = array_values(array_unique(array_merge(array_column($cfg['icons'], 'id'), array_keys($cur['open']))));
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="welcome-estadisticas-' . $per['from'] . '_' . $per['to'] . '.csv"');
+    $out = fopen('php://output', 'w');
+    fwrite($out, "\xEF\xBB\xBF"); // BOM para Excel
+    $labels = [];
+    foreach ($cfg['icons'] as $ic) { $labels[$ic['id']] = $ic['label'] !== '' ? $ic['label'] : ucfirst($ic['id']); }
+    $months = [];
+    $head = ['Fecha', 'Arranques del kiosco', 'Interacciones', 'Suscripciones newsletter'];
+    foreach ($ids as $id) { $head[] = 'Aperturas: ' . ($labels[$id] ?? $id); }
+    fputcsv($out, $head, ';');
+    for ($d = new DateTimeImmutable($per['from']); $d <= new DateTimeImmutable($per['to']); $d = $d->modify('+1 day')) {
+        $m = $d->format('Y-m');
+        $months[$m] ??= json_read(stats_dir() . '/' . $m . '.json', ['days' => []])['days'] ?? [];
+        $day = $months[$m][$d->format('Y-m-d')] ?? [];
+        $row = [$d->format('Y-m-d'), (int)($day['start'] ?? 0), array_sum($day['open'] ?? []), array_sum($day['nl'] ?? [])];
+        foreach ($ids as $id) { $row[] = (int)($day['open'][$id] ?? 0); }
+        fputcsv($out, $row, ';');
+    }
+    fclose($out);
+    exit;
+}
+
+/* ================================================================
  *  Vista
  * ================================================================ */
 $c = config_get();
@@ -432,6 +463,8 @@ $flashes = flash_take();
 $adminPages = [
     'contenido'   => ['Contenido', 'Textos centrales, logotipo inferior y tema de la pantalla.', ['tema', 'contenido', 'logos', 'reset'], true,
                       'M4 6h16M4 12h16M4 18h10'],
+    'estadisticas' => ['Estadísticas', 'Interacciones con el kiosco y suscripciones a la newsletter, con comparación entre periodos.', ['estadisticas'], false,
+                      'M3 3v18h18M7 15l4-4 3 3 6-6M20 8v4M20 8h-4'],
     'apariencia'  => ['Apariencia', 'Imágenes, colores, textos de bienvenida y animaciones del tema claro.', ['apariencia'], true,
                       'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01'],
     'oscuro'      => ['Tema oscuro', 'Imágenes y colores que usa el kiosco cuando el mantenedor activa el tema oscuro.', ['oscuro'], true,
@@ -621,6 +654,120 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
 <?php endif; ?>
 
 <?php if ($isAdmin): ?>
+<!-- ============ ESTADÍSTICAS (admin) ============ -->
+<?php if ($sec('estadisticas')):
+    $per = stats_periods($_GET);
+    $st = stats_query($per['from'], $per['to']);
+    $hasCmp = $per['cfrom'] !== '';
+    $cs = $hasCmp ? stats_query($per['cfrom'], $per['cto']) : null;
+    $iconLabel = []; $iconType = [];
+    foreach ($c['icons'] as $ic) { $iconLabel[$ic['id']] = $ic['label'] !== '' ? $ic['label'] : ucfirst($ic['id']); $iconType[$ic['id']] = $ic['type']; }
+    $sumType = function (?array $s, string $type) use ($iconType): int {
+        if (!$s) { return 0; }
+        $n = 0;
+        foreach ($s['open'] as $id => $v) { if (($iconType[$id] ?? '') === $type) { $n += $v; } }
+        return $n;
+    };
+    $avg = function (?array $s): float {
+        if (!$s) { return 0.0; }
+        $sec = 0; $n = 0;
+        foreach ($s['dur'] as [$a, $b]) { $sec += $a; $n += $b; }
+        return $n ? $sec / $n : 0.0;
+    };
+    $kpis = [
+        ['Interacciones', 'Aperturas de los iconos del rodapié', $st['opens'], $cs['opens'] ?? null, false],
+        ['Suscripciones a la newsletter', 'Formulario de Bezares Mailing enviado con éxito', $st['subs'], $cs['subs'] ?? null, false],
+        ['Reproducciones de vídeo', 'Aperturas de iconos de YouTube', $sumType($st, 'youtube'), $hasCmp ? $sumType($cs, 'youtube') : null, false],
+        ['Visitas a páginas web', 'Aperturas de iconos de página web', $sumType($st, 'url'), $hasCmp ? $sumType($cs, 'url') : null, false],
+        ['Tiempo medio por ventana', 'Desde que se abre hasta que se cierra', $avg($st), $hasCmp ? $avg($cs) : null, true],
+        ['Arranques del kiosco', 'Cargas de la pantalla (encendidos y recargas)', $st['start'], $cs['start'] ?? null, false],
+    ];
+    $curDaily = array_values($st['daily']);
+    $cmpDaily = $cs ? array_values($cs['daily']) : null;
+    $dayLabels = array_map(fn($k) => (int)substr($k, 8, 2) . '/' . (int)substr($k, 5, 2), array_keys($st['daily']));
+    $ids = array_values(array_unique(array_merge(array_column($c['icons'], 'id'), array_keys($st['open']), $cs ? array_keys($cs['open']) : [])));
+    $presetNames = ['lastmonth' => 'Mes anterior', 'thismonth' => 'Este mes', 'last7' => 'Últimos 7 días', 'last30' => 'Últimos 30 días',
+                    'thisyear' => 'Este año', 'lastyear' => 'Año anterior', 'custom' => 'Personalizado'];
+    $cmpNames = ['prev' => 'Periodo anterior', 'year' => 'Mismo periodo del año anterior', 'custom' => 'Personalizado', 'none' => 'Sin comparación'];
+?>
+<section id="estadisticas">
+  <form method="get" class="card stats-filter" data-stats-filter>
+    <input type="hidden" name="p" value="estadisticas">
+    <div class="stats-row">
+      <label>Periodo
+        <select name="preset" data-preset><?php foreach ($presetNames as $k => $n): ?><option value="<?= $k ?>"<?= sel($per['preset'], $k) ?>><?= $n ?></option><?php endforeach; ?></select></label>
+      <label>Desde<input type="date" name="from" value="<?= e($per['from']) ?>" data-custom="preset"></label>
+      <label>Hasta<input type="date" name="to" value="<?= e($per['to']) ?>" data-custom="preset"></label>
+    </div>
+    <div class="stats-row">
+      <label>Comparar con
+        <select name="cmp" data-cmp><?php foreach ($cmpNames as $k => $n): ?><option value="<?= $k ?>"<?= sel($per['cmp'], $k) ?>><?= $n ?></option><?php endforeach; ?></select></label>
+      <label>Desde<input type="date" name="cfrom" value="<?= e($per['cfrom']) ?>" data-custom="cmp"<?= $hasCmp ? '' : ' disabled' ?>></label>
+      <label>Hasta<input type="date" name="cto" value="<?= e($per['cto']) ?>" data-custom="cmp"<?= $hasCmp ? '' : ' disabled' ?>></label>
+    </div>
+    <div class="stats-actions">
+      <button class="btn primary">Aplicar</button>
+      <a class="btn" href="admin.php?<?= e(http_build_query(['p' => 'estadisticas', 'csv' => 1, 'preset' => 'custom', 'from' => $per['from'], 'to' => $per['to']])) ?>">Descargar CSV</a>
+    </div>
+  </form>
+
+  <p class="stats-range"><strong><?= e(stats_fmt_date($per['from'])) ?> – <?= e(stats_fmt_date($per['to'])) ?></strong>
+    <?php if ($hasCmp): ?><span class="hint"> comparado con <?= e(stats_fmt_date($per['cfrom'])) ?> – <?= e(stats_fmt_date($per['cto'])) ?></span><?php endif; ?></p>
+
+  <div class="kpi-grid">
+    <?php foreach ($kpis as [$title, $hint, $val, $prev, $isTime]): [$dtxt, $dcls] = stats_delta((float)$val, $prev === null ? null : (float)$prev); ?>
+      <div class="card kpi">
+        <span class="kpi-title"><?= e($title) ?></span>
+        <b class="kpi-val"><?= $isTime ? e(stats_fmt_secs($val)) : number_format((float)$val, 0, ',', '.') ?></b>
+        <?php if ($prev !== null): ?>
+          <span class="kpi-cmp"><span class="delta <?= $dcls ?>"><?= e($dtxt) ?></span> antes: <?= $isTime ? e(stats_fmt_secs($prev)) : number_format((float)$prev, 0, ',', '.') ?></span>
+        <?php endif; ?>
+        <span class="hint"><?= e($hint) ?></span>
+      </div>
+    <?php endforeach; ?>
+  </div>
+
+  <div class="card">
+    <div class="chart-head"><h2>Interacciones por día</h2>
+      <span class="legend"><i class="sw cur"></i> Periodo seleccionado<?php if ($hasCmp): ?> <i class="sw cmp"></i> Comparación (día a día)<?php endif; ?></span></div>
+    <?= stats_bar_svg(array_column($curDaily, 'opens'), $cmpDaily ? array_column($cmpDaily, 'opens') : null, $dayLabels, 'Interacciones por día') ?>
+  </div>
+
+  <div class="stats-two">
+    <div class="card">
+      <div class="chart-head"><h2>Suscripciones a la newsletter por día</h2></div>
+      <?= stats_bar_svg(array_column($curDaily, 'subs'), $cmpDaily ? array_column($cmpDaily, 'subs') : null, $dayLabels, 'Suscripciones por día', 460, 220) ?>
+    </div>
+    <div class="card">
+      <div class="chart-head"><h2>Interacciones por hora del día</h2></div>
+      <?= stats_bar_svg($st['hours'], $cs ? $cs['hours'] : null, array_map(fn($h) => $h . 'h', range(0, 23)), 'Interacciones por hora', 460, 220) ?>
+    </div>
+  </div>
+
+  <div class="card table-card">
+    <h2>Por icono del rodapié</h2>
+    <table class="users stats-table">
+      <thead><tr><th>Icono</th><th>Aperturas</th><?php if ($hasCmp): ?><th>Antes</th><th>Variación</th><?php endif; ?><th>Tiempo medio</th><th>Suscripciones</th></tr></thead>
+      <tbody>
+      <?php foreach ($ids as $id): $o = $st['open'][$id] ?? 0; $po = $cs['open'][$id] ?? 0; $du = $st['dur'][$id] ?? [0, 0]; [$dt, $dc] = stats_delta((float)$o, $hasCmp ? (float)$po : null); ?>
+        <tr>
+          <td><?= e($iconLabel[$id] ?? $id) ?><?php if (!isset($iconLabel[$id])): ?> <span class="hint">(eliminado)</span><?php endif; ?></td>
+          <td><?= number_format($o, 0, ',', '.') ?></td>
+          <?php if ($hasCmp): ?><td><?= number_format($po, 0, ',', '.') ?></td><td><span class="delta <?= $dc ?>"><?= e($dt) ?></span></td><?php endif; ?>
+          <td><?= $du[1] ? e(stats_fmt_secs($du[0] / $du[1])) : '—' ?></td>
+          <td><?= isset($st['nl'][$id]) ? number_format($st['nl'][$id], 0, ',', '.') : '—' ?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    <p class="hint">Las suscripciones se cuentan con el aviso que envía el formulario de Bezares Mailing (versión 2.18 o posterior) al registrar un alta;
+      con versiones anteriores se estiman por la recarga automática del modo kiosco tras el mensaje de confirmación.
+      Cierres por inactividad en el periodo: <?= (int)$st['idle'] ?> · Recargas con 3 clics: <?= (int)$st['reload'] ?>.
+      Los datos se guardan agregados por día, sin información personal; la vista previa de este panel no cuenta.</p>
+  </div>
+</section>
+<?php endif; ?>
+
 <!-- ============ APARIENCIA (admin) ============ -->
 <?php if ($sec('apariencia')): ?>
 <section id="apariencia" class="card">
@@ -675,6 +822,10 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
         <input type="number" name="bg_pulse_duration" min="0.5" max="10" step="0.1" value="<?= e($c['bg_pulse_duration']) ?>"></label>
       <label>Cerrar ventanas emergentes tras inactividad (s, 0 = nunca)
         <input type="number" name="popup_idle_close" min="0" max="3600" step="1" value="<?= e($c['popup_idle_close']) ?>"></label>
+    </div>
+    <div class="grid3">
+      <label>Estadísticas: segundos que Bezares Mailing muestra el mensaje tras un alta (modo kiosco)
+        <input type="number" name="mailing_kiosk_secs" min="2" max="120" step="1" value="<?= e($c['mailing_kiosk_secs']) ?>"></label>
     </div>
     <button class="btn primary">Guardar apariencia</button>
   </form>

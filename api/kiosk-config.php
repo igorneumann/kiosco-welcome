@@ -26,6 +26,7 @@ foreach ($c['icons'] as $ic) {
     // Comprobación también al servir: una URL guardada antes de cambiar la lista deja de abrirse.
     $blocked = !$isYt && frame_url_problem((string)$ic['url'], $domains) !== null;
     $icons[] = [
+        'id'             => (string)$ic['id'],
         'blocked'        => $blocked,
         'allow_same_origin' => !empty($ic['allow_same_origin']),
         'label'          => (string)$ic['label'],
@@ -48,6 +49,7 @@ foreach ($c['icons'] as $ic) {
 echo json_encode([
     'version'           => $c['version'],
     'theme'             => $dark ? 'dark' : 'light',
+    'track'             => stats_token(),
     'logo_tile'         => $dark && !empty($c['dark']['logo_tile']),
     'frame_domains'     => $domains,
     'header_image'      => $c['header_image'],
@@ -68,6 +70,7 @@ echo json_encode([
     'bg_pulse_scale'    => (float)$c['bg_pulse_scale'],
     'bg_pulse_duration' => (float)$c['bg_pulse_duration'],
     'popup_idle_close'  => (int)$c['popup_idle_close'],
+    'mailing_kiosk_secs'=> (int)$c['mailing_kiosk_secs'],
     'center_text'       => $c['center_text'],
     'center_font_mode'  => $c['center_font_mode'],
     'center_font_size'  => (float)$c['center_font_size'],
