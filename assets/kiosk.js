@@ -27,26 +27,20 @@
     try { fetch('api/track.php', { method: 'POST', body: data, keepalive: true, credentials: 'omit', headers: { 'Content-Type': 'application/json' } }); } catch (err) {}
   }
 
-  // Suscripciones a la newsletter = clics en el botón de enviar del formulario de Bezares Mailing:
-  //  1) Aviso explícito: Bezares Mailing ≥ 2.18 envía postMessage {bezaresMailingEvent:'submit'} al enviar el formulario.
-  //  2) Si la versión instalada aún no lo envía: cada envío recarga el iframe, así que cada recarga posterior a la
-  //     primera carga cuenta, salvo la recarga automática del modo kiosco (N segundos después de mostrar el
-  //     mensaje tras un envío; ajuste «segundos del mensaje», por defecto 5). Se desactiva al recibir un aviso explícito.
+  // Suscripciones a la newsletter = clics en el botón de enviar del formulario de Bezares Mailing.
+  // Funciona con Bezares Mailing tal cual, sin cambios: el formulario (otro dominio) solo avisa de su altura,
+  // lo que sirve para saber que la ventana contiene ese formulario. Cada envío recarga el iframe, así que
+  // cada recarga posterior a la primera carga cuenta como un envío, salvo la recarga automática del modo
+  // kiosco, que llega N segundos después del mensaje mostrado tras un envío (ajuste «segundos del mensaje»
+  // en Apariencia, el mismo valor que en Bezares Mailing; por defecto 5).
   var mail = null; // { win, icon, isMailing, loads, lastLoad, afterSubmit }
-  var explicitMail = false;
-  try { explicitMail = localStorage.getItem('wk-mail-events') === '1'; } catch (e) {}
   window.addEventListener('message', function (e) {
-    if (!mail || e.source !== mail.win || !e.data) return;
-    if (typeof e.data.bezaresMailingHeight === 'number') mail.isMailing = true;
-    if (e.data.bezaresMailingEvent === 'submit') {
-      if (!explicitMail) { explicitMail = true; try { localStorage.setItem('wk-mail-events', '1'); } catch (err) {} }
-      track('nl', { i: mail.icon });
-    }
+    if (mail && e.source === mail.win && e.data && typeof e.data.bezaresMailingHeight === 'number') mail.isMailing = true;
   });
   function mailFrameLoaded() {
     if (!mail) return;
     var now = Date.now(), k = (cfg && cfg.mailing_kiosk_secs) || 5;
-    if (mail.loads > 0 && mail.isMailing && !explicitMail) {
+    if (mail.loads > 0 && mail.isMailing) {
       var dt = (now - mail.lastLoad) / 1000;
       var autoRefresh = mail.afterSubmit && dt >= k - 1.5 && dt <= k + 3;
       if (!autoRefresh) track('nl', { i: mail.icon }); // recarga provocada por un envío del formulario

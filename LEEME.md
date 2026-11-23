@@ -45,7 +45,7 @@ Por defecto el kiosco y el panel solo se pueden mostrar dentro de un iframe en e
 Página **Estadísticas** del panel del administrador: interacciones (aperturas de cada icono), suscripciones a la newsletter, reproducciones de vídeo, visitas a páginas web, tiempo medio por ventana y arranques del kiosco, con gráficos por día y por hora y tabla por icono. Periodo seleccionable (por defecto, el **mes anterior**) y comparación con otro periodo (por defecto, el **periodo anterior**; también el mismo periodo del año anterior o fechas a medida). Exportación a CSV.
 
 - El kiosco envía los eventos a `api/track.php` (solo POST del mismo origen, token diario, lista cerrada de eventos, 60 eventos/min por dirección). Se guardan contadores agregados por día en `stats/AAAA-MM.json` de la carpeta de datos, sin datos personales. La vista previa del panel no cuenta.
-- Suscripciones: cada clic en el botón de enviar del formulario de la newsletter. Bezares Mailing 2.18 o posterior avisa al kiosco de cada envío (`postMessage`); con versiones anteriores se detecta por la recarga del formulario al enviarlo, descontando la recarga automática del modo kiosco (ajuste *segundos del mensaje* en Apariencia, por defecto 5, igual que en Bezares Mailing).
+- Suscripciones: cada clic en el botón de enviar del formulario de la newsletter, sin cambios en Bezares Mailing. Se detecta por la recarga del formulario al enviarlo, descontando la recarga automática del modo kiosco (ajuste *segundos del mensaje* en Apariencia, por defecto 5; debe coincidir con el de Bezares Mailing).
 
 ## ¿Olvidó su contraseña?
 

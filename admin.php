@@ -754,8 +754,8 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
       <?php endforeach; ?>
       </tbody>
     </table>
-    <p class="hint">Cada clic en el botón de enviar del formulario de la newsletter cuenta como una suscripción. Con Bezares Mailing 2.18 o posterior
-      el formulario avisa de cada envío; con versiones anteriores se detecta por la recarga del formulario al enviarlo (sin contar la recarga automática del modo kiosco).
+    <p class="hint">Cada clic en el botón de enviar del formulario de la newsletter cuenta como una suscripción: se detecta por la recarga del formulario al enviarlo,
+      sin contar la recarga automática del modo kiosco de Bezares Mailing.
       Cierres por inactividad en el periodo: <?= (int)$st['idle'] ?> · Recargas con 3 clics: <?= (int)$st['reload'] ?>.
       Los datos se guardan agregados por día, sin información personal; la vista previa de este panel no cuenta.</p>
   </div>
