@@ -103,10 +103,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'reset_content':
                 $anchor = 'contenido';
-                config_update(function (array &$c) {
+                $deleteLogos = post_str('mode', 10) === 'delete';
+                config_update(function (array &$c) use ($deleteLogos) {
                     $d = config_defaults();
-                    foreach ($c['logos'] as $l) { delete_upload($l); }
-                    $c['logos']            = [];
+                    if ($deleteLogos) {
+                        foreach ($c['logos'] as $l) { delete_upload($l); }
+                        $c['logos'] = [];
+                    }
                     $c['bottom_logo']      = '';
                     $c['theme']            = $d['theme'];
                     foreach (['center_text', 'center_font_mode', 'center_font_size', 'center_bold',
@@ -114,8 +117,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $c[$k] = $d[$k];
                     }
                 });
-                auth_log('reset_content', $me['username']);
-                flash('Configuración restablecida: sin textos centrales, tema claro, logo de Bezares y logos subidos eliminados.');
+                auth_log($deleteLogos ? 'reset_content_delete_logos' : 'reset_content', $me['username']);
+                flash($deleteLogos
+                    ? 'Configuración restablecida: sin textos centrales, tema claro, logo de Bezares y logos subidos eliminados.'
+                    : 'Configuración restablecida: sin textos centrales, tema claro y logo de Bezares. Los logos subidos se conservan.');
                 break;
 
             case 'change_own_password':
@@ -645,11 +650,17 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
 <?php if ($sec('reset')): ?>
 <section class="card warn">
   <h2>Restablecer configuración por defecto</h2>
-  <p>Quita los dos textos centrales, vuelve al logo de Bezares y <strong>borra todos los logos subidos</strong>.</p>
-  <form method="post" data-confirm="¿Restablecer? Se borrarán los textos centrales y todos los logos subidos.">
-    <?= csrf_field() ?><input type="hidden" name="action" value="reset_content">
-    <button class="btn danger">Restablecer por defecto</button>
-  </form>
+  <p>Quita los dos textos centrales, vuelve al tema claro y al logo de Bezares.</p>
+  <div class="row">
+    <form method="post" class="inline" data-confirm="¿Restablecer? Se borrarán los textos centrales; los logos subidos se conservan.">
+      <?= csrf_field() ?><input type="hidden" name="action" value="reset_content"><input type="hidden" name="mode" value="keep">
+      <button class="btn danger">Restablecer (conservar logos)</button>
+    </form>
+    <form method="post" class="inline" data-confirm="¿Restablecer? Se borrarán los textos centrales y TODOS los logos subidos.">
+      <?= csrf_field() ?><input type="hidden" name="action" value="reset_content"><input type="hidden" name="mode" value="delete">
+      <button class="btn danger">Restablecer y borrar logos</button>
+    </form>
+  </div>
 </section>
 <?php endif; ?>
 

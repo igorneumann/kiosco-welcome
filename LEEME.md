@@ -24,7 +24,7 @@ La URL del kiosco la sirve `kiosk.php` (regla de `.htaccess`) para enviar una CS
 
 ## Roles
 
-**Mantenedor**: dos textos centrales, uno debajo del otro (varias líneas cada uno), cada uno con su tamaño manual o botón **AUTO** (ajusta la fuente al ancho; si juntos no caben en el alto, se reducen en proporción) y opción de **negrita**, biblioteca de logos inferiores (subir, elegir, borrar), **Restablecer por defecto** (sin textos centrales, logo de Bezares, borra los logos subidos), su contraseña.
+**Mantenedor**: dos textos centrales, uno debajo del otro (varias líneas cada uno), cada uno con su tamaño manual o botón **AUTO** (ajusta la fuente al ancho; si juntos no caben en el alto, se reducen en proporción) y opción de **negrita**, biblioteca de logos inferiores (subir, elegir, borrar), **Restablecer** en dos variantes: *conservar logos* (sin textos centrales, tema claro, logo de Bezares; la biblioteca de logos se mantiene) o *borrar logos* (además elimina los logos subidos), su contraseña.
 
 **Administrador**: todo lo anterior, más imagen de encabezado, imagen de fondo, logo por defecto, textos de bienvenida (uno por línea, se alternan), colores (rodapié, líneas, textos, fondo), intensidad y velocidad del latido del fondo, iconos del rodapié (añadir hasta 8, quitar, ordenar, icono integrado o imagen propia, URL / código iframe / YouTube, ventana emergente o página completa, ancho, alto, texto, color, posición y tamaño del botón de cierre), usuarios y restablecimiento total.
 
