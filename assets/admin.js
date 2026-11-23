@@ -17,15 +17,16 @@
     });
   });
 
-  // Estadísticas: al tocar una fecha el periodo pasa a «Personalizado»; sin comparación se desactivan sus fechas
+  // Estadísticas: las fechas solo aparecen con «Personalizado»
   var sf = document.querySelector('[data-stats-filter]');
   if (sf) {
-    var preset = sf.querySelector('[data-preset]'), cmp = sf.querySelector('[data-cmp]');
-    sf.querySelectorAll('[data-custom="preset"]').forEach(function (i) { i.addEventListener('change', function () { preset.value = 'custom'; }); });
-    sf.querySelectorAll('[data-custom="cmp"]').forEach(function (i) { i.addEventListener('change', function () { cmp.value = 'custom'; }); });
-    var syncCmp = function () { sf.querySelectorAll('[data-custom="cmp"]').forEach(function (i) { i.disabled = cmp.value === 'none'; }); };
-    cmp.addEventListener('change', syncCmp);
-    preset.addEventListener('change', function () { if (preset.value !== 'custom') sf.submit(); });
+    [['preset', '[data-preset]'], ['cmp', '[data-cmp]']].forEach(function (pair) {
+      var sel = sf.querySelector(pair[1]);
+      var sync = function () {
+        sf.querySelectorAll('[data-dates="' + pair[0] + '"]').forEach(function (l) { l.hidden = sel.value !== 'custom'; });
+      };
+      sel.addEventListener('change', sync);
+    });
   }
 
   // Evitar doble envío

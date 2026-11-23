@@ -676,7 +676,7 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     };
     $kpis = [
         ['Interacciones', 'Aperturas de los iconos del rodapié', $st['opens'], $cs['opens'] ?? null, false],
-        ['Suscripciones a la newsletter', 'Formulario de Bezares Mailing enviado con éxito', $st['subs'], $cs['subs'] ?? null, false],
+        ['Suscripciones a la newsletter', 'Clics en el botón de enviar del formulario', $st['subs'], $cs['subs'] ?? null, false],
         ['Reproducciones de vídeo', 'Aperturas de iconos de YouTube', $sumType($st, 'youtube'), $hasCmp ? $sumType($cs, 'youtube') : null, false],
         ['Visitas a páginas web', 'Aperturas de iconos de página web', $sumType($st, 'url'), $hasCmp ? $sumType($cs, 'url') : null, false],
         ['Tiempo medio por ventana', 'Desde que se abre hasta que se cierra', $avg($st), $hasCmp ? $avg($cs) : null, true],
@@ -693,26 +693,20 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
 <section id="estadisticas">
   <form method="get" class="card stats-filter" data-stats-filter>
     <input type="hidden" name="p" value="estadisticas">
-    <div class="stats-row">
-      <label>Periodo
-        <select name="preset" data-preset><?php foreach ($presetNames as $k => $n): ?><option value="<?= $k ?>"<?= sel($per['preset'], $k) ?>><?= $n ?></option><?php endforeach; ?></select></label>
-      <label>Desde<input type="date" name="from" value="<?= e($per['from']) ?>" data-custom="preset"></label>
-      <label>Hasta<input type="date" name="to" value="<?= e($per['to']) ?>" data-custom="preset"></label>
-    </div>
-    <div class="stats-row">
-      <label>Comparar con
-        <select name="cmp" data-cmp><?php foreach ($cmpNames as $k => $n): ?><option value="<?= $k ?>"<?= sel($per['cmp'], $k) ?>><?= $n ?></option><?php endforeach; ?></select></label>
-      <label>Desde<input type="date" name="cfrom" value="<?= e($per['cfrom']) ?>" data-custom="cmp"<?= $hasCmp ? '' : ' disabled' ?>></label>
-      <label>Hasta<input type="date" name="cto" value="<?= e($per['cto']) ?>" data-custom="cmp"<?= $hasCmp ? '' : ' disabled' ?>></label>
-    </div>
-    <div class="stats-actions">
-      <button class="btn primary">Aplicar</button>
-      <a class="btn" href="admin.php?<?= e(http_build_query(['p' => 'estadisticas', 'csv' => 1, 'preset' => 'custom', 'from' => $per['from'], 'to' => $per['to']])) ?>">Descargar CSV</a>
-    </div>
+    <label>Periodo
+      <select name="preset" data-preset><?php foreach ($presetNames as $k => $n): ?><option value="<?= $k ?>"<?= sel($per['preset'], $k) ?>><?= $n ?></option><?php endforeach; ?></select></label>
+    <label data-dates="preset"<?= $per['preset'] === 'custom' ? '' : ' hidden' ?>>Desde<input type="date" name="from" value="<?= e($per['from']) ?>"></label>
+    <label data-dates="preset"<?= $per['preset'] === 'custom' ? '' : ' hidden' ?>>Hasta<input type="date" name="to" value="<?= e($per['to']) ?>"></label>
+    <label>Comparar con
+      <select name="cmp" data-cmp><?php foreach ($cmpNames as $k => $n): ?><option value="<?= $k ?>"<?= sel($per['cmp'], $k) ?>><?= $n ?></option><?php endforeach; ?></select></label>
+    <label data-dates="cmp"<?= $per['cmp'] === 'custom' ? '' : ' hidden' ?>>Desde<input type="date" name="cfrom" value="<?= e($per['cfrom']) ?>"></label>
+    <label data-dates="cmp"<?= $per['cmp'] === 'custom' ? '' : ' hidden' ?>>Hasta<input type="date" name="cto" value="<?= e($per['cto']) ?>"></label>
+    <button class="btn primary">Ver</button>
   </form>
 
-  <p class="stats-range"><strong><?= e(stats_fmt_date($per['from'])) ?> – <?= e(stats_fmt_date($per['to'])) ?></strong>
-    <?php if ($hasCmp): ?><span class="hint"> comparado con <?= e(stats_fmt_date($per['cfrom'])) ?> – <?= e(stats_fmt_date($per['cto'])) ?></span><?php endif; ?></p>
+  <p class="stats-range"><span><strong><?= e(stats_fmt_date($per['from'])) ?> – <?= e(stats_fmt_date($per['to'])) ?></strong>
+    <?php if ($hasCmp): ?><span class="hint"> comparado con <?= e(stats_fmt_date($per['cfrom'])) ?> – <?= e(stats_fmt_date($per['cto'])) ?></span><?php endif; ?></span>
+    <a href="admin.php?<?= e(http_build_query(['p' => 'estadisticas', 'csv' => 1, 'preset' => 'custom', 'from' => $per['from'], 'to' => $per['to']])) ?>">Descargar CSV</a></p>
 
   <div class="kpi-grid">
     <?php foreach ($kpis as [$title, $hint, $val, $prev, $isTime]): [$dtxt, $dcls] = stats_delta((float)$val, $prev === null ? null : (float)$prev); ?>
@@ -760,8 +754,8 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
       <?php endforeach; ?>
       </tbody>
     </table>
-    <p class="hint">Las suscripciones se cuentan con el aviso que envía el formulario de Bezares Mailing (versión 2.18 o posterior) al registrar un alta;
-      con versiones anteriores se estiman por la recarga automática del modo kiosco tras el mensaje de confirmación.
+    <p class="hint">Cada clic en el botón de enviar del formulario de la newsletter cuenta como una suscripción. Con Bezares Mailing 2.18 o posterior
+      el formulario avisa de cada envío; con versiones anteriores se detecta por la recarga del formulario al enviarlo (sin contar la recarga automática del modo kiosco).
       Cierres por inactividad en el periodo: <?= (int)$st['idle'] ?> · Recargas con 3 clics: <?= (int)$st['reload'] ?>.
       Los datos se guardan agregados por día, sin información personal; la vista previa de este panel no cuenta.</p>
   </div>

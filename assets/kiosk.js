@@ -27,19 +27,18 @@
     try { fetch('api/track.php', { method: 'POST', body: data, keepalive: true, credentials: 'omit', headers: { 'Content-Type': 'application/json' } }); } catch (err) {}
   }
 
-  // Suscripciones a la newsletter (formulario de Bezares Mailing incrustado):
-  //  1) Aviso explícito: Bezares Mailing ≥ 2.18 envía postMessage {bezaresMailingEvent:'subscribe'} al confirmar el alta.
-  //  2) Si la versión instalada aún no lo envía: en modo kiosco, tras un alta el formulario muestra el mensaje
-  //     y se recarga solo a los N segundos (ajuste «segundos del mensaje» de Bezares Mailing). Una recarga del
-  //     iframe a ese intervalo exacto indica que la página anterior era la confirmación de un alta.
-  //     Se desactiva en cuanto se recibe un aviso explícito.
-  var mail = null; // { win, icon, isMailing, lastLoad }
+  // Suscripciones a la newsletter = clics en el botón de enviar del formulario de Bezares Mailing:
+  //  1) Aviso explícito: Bezares Mailing ≥ 2.18 envía postMessage {bezaresMailingEvent:'submit'} al enviar el formulario.
+  //  2) Si la versión instalada aún no lo envía: cada envío recarga el iframe, así que cada recarga posterior a la
+  //     primera carga cuenta, salvo la recarga automática del modo kiosco (N segundos después de mostrar el
+  //     mensaje tras un envío; ajuste «segundos del mensaje», por defecto 5). Se desactiva al recibir un aviso explícito.
+  var mail = null; // { win, icon, isMailing, loads, lastLoad, afterSubmit }
   var explicitMail = false;
   try { explicitMail = localStorage.getItem('wk-mail-events') === '1'; } catch (e) {}
   window.addEventListener('message', function (e) {
     if (!mail || e.source !== mail.win || !e.data) return;
     if (typeof e.data.bezaresMailingHeight === 'number') mail.isMailing = true;
-    if (e.data.bezaresMailingEvent === 'subscribe') {
+    if (e.data.bezaresMailingEvent === 'submit') {
       if (!explicitMail) { explicitMail = true; try { localStorage.setItem('wk-mail-events', '1'); } catch (err) {} }
       track('nl', { i: mail.icon });
     }
@@ -47,10 +46,13 @@
   function mailFrameLoaded() {
     if (!mail) return;
     var now = Date.now(), k = (cfg && cfg.mailing_kiosk_secs) || 5;
-    if (!explicitMail && mail.isMailing && mail.lastLoad) {
+    if (mail.loads > 0 && mail.isMailing && !explicitMail) {
       var dt = (now - mail.lastLoad) / 1000;
-      if (dt >= k - 1.5 && dt <= k + 3) track('nl', { i: mail.icon });
+      var autoRefresh = mail.afterSubmit && dt >= k - 1.5 && dt <= k + 3;
+      if (!autoRefresh) track('nl', { i: mail.icon }); // recarga provocada por un envío del formulario
+      mail.afterSubmit = !autoRefresh;
     }
+    mail.loads++;
     mail.lastLoad = now;
   }
 
@@ -304,7 +306,7 @@
     document.body.appendChild(ov);
     modal = ov;
     if (ic.type !== 'youtube') {
-      mail = { win: fr.contentWindow, icon: ic.id, isMailing: false, lastLoad: 0 };
+      mail = { win: fr.contentWindow, icon: ic.id, isMailing: false, loads: 0, lastLoad: 0, afterSubmit: false };
       fr.addEventListener('load', mailFrameLoaded);
     }
     bumpIdle();
