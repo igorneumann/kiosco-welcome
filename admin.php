@@ -12,6 +12,18 @@ if (!$me) {
 }
 $isAdmin = $me['role'] === 'admin';
 
+/** Página del panel del administrador donde está cada ancla (para volver allí tras guardar). */
+function admin_page_for_anchor(string $anchor): string
+{
+    if (str_starts_with($anchor, 'icon-') || $anchor === 'iconos') {
+        return 'iconos';
+    }
+    $map = ['tema' => 'contenido', 'contenido' => 'contenido', 'logos' => 'contenido', 'apariencia' => 'apariencia',
+            'oscuro' => 'oscuro', 'integracion' => 'integracion', 'usuarios' => 'usuarios', 'cuenta' => 'cuenta',
+            'peligro' => 'sistema'];
+    return $map[$anchor] ?? 'contenido';
+}
+
 /* ================================================================
  *  Acciones (POST → redirección)
  * ================================================================ */
@@ -407,7 +419,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (RuntimeException $ex) {
         flash($ex->getMessage(), 'err');
     }
-    redirect('admin.php' . ($anchor ? '#' . $anchor : ''));
+    redirect('admin.php' . ($isAdmin ? '?p=' . admin_page_for_anchor($anchor) : '') . ($anchor ? '#' . $anchor : ''));
 }
 
 /* ================================================================
@@ -415,6 +427,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  * ================================================================ */
 $c = config_get();
 $flashes = flash_take();
+
+/* Administrador: panel con menú lateral, una página por sección. El mantenedor conserva la vista sencilla. */
+$adminPages = [
+    'contenido'   => ['Contenido', 'Textos centrales, logotipo inferior y tema de la pantalla.', ['tema', 'contenido', 'logos', 'reset'], true,
+                      'M4 6h16M4 12h16M4 18h10'],
+    'apariencia'  => ['Apariencia', 'Imágenes, colores, textos de bienvenida y animaciones del tema claro.', ['apariencia'], true,
+                      'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 8.5h.01'],
+    'oscuro'      => ['Tema oscuro', 'Imágenes y colores que usa el kiosco cuando el mantenedor activa el tema oscuro.', ['oscuro'], true,
+                      'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z'],
+    'iconos'      => ['Iconos del rodapié', 'Botones del rodapié, su contenido y los dominios que se pueden mostrar.', ['iconos'], true,
+                      'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z'],
+    'integracion' => ['Integración', 'Webs de confianza que pueden mostrar el kiosco o el panel dentro de un iframe.', ['integracion'], false,
+                      'M8 6l-6 6 6 6M16 6l6 6-6 6'],
+    'usuarios'    => ['Usuarios', 'Administradores y mantenedores, contraseñas y correos de recuperación.', ['usuarios'], false,
+                      'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75'],
+    'cuenta'      => ['Mi cuenta', 'Cambie su contraseña.', ['cuenta'], false,
+                      'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'],
+    'sistema'     => ['Mantenimiento', 'Restablecer la configuración de fábrica.', ['peligro'], false,
+                      'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'],
+];
+$page = (string)($_GET['p'] ?? 'contenido');
+if (!isset($adminPages[$page])) {
+    $page = 'contenido';
+}
+[$pageTitle, $pageDesc, $pageSections, $pagePreview] = $adminPages[$page];
+$showPreview = !$isAdmin || $pagePreview;
+/** ¿Se muestra esta sección? Mantenedor: todas las suyas (vista de siempre). Administrador: las de la página abierta. */
+$sec = fn(string $id): bool => !$isAdmin || in_array($id, $pageSections, true);
 $currentLogo = $c['bottom_logo'] ?: '';
 $iconNames = [
     'globe' => 'Web / globo', 'mail' => 'Correo', 'play' => 'Reproducir', 'video' => 'Cámara de vídeo',
@@ -436,7 +476,36 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
 <script src="assets/icons.js" defer></script>
 <script src="assets/admin.js" defer></script>
 </head>
-<body>
+<body<?= $isAdmin ? ' class="shell-body"' : '' ?>>
+<?php if ($isAdmin): ?>
+<div class="shell">
+  <aside class="sidebar">
+    <a class="sb-brand" href="admin.php" title="Welcome Bezares">
+      <img src="assets/favicon-dark.svg" alt="" width="40" height="40">
+      <span><b>Welcome</b><small>Bezares · Panel</small></span>
+    </a>
+    <nav class="sb-nav" aria-label="Secciones">
+      <?php foreach ($adminPages as $k => [$label, , , , $ico]): ?>
+        <a href="admin.php?p=<?= $k ?>" title="<?= e($label) ?>"<?= $k === $page ? ' class="on" aria-current="page"' : '' ?>><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="<?= $ico ?>" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span><?= e($label) ?></span></a>
+      <?php endforeach; ?>
+    </nav>
+    <div class="sb-foot">
+      <a class="sb-kiosk" href="<?= e(KIOSK_FILE) ?>" target="_blank" rel="noopener">Abrir kiosco ↗</a>
+      <div class="sb-who" title="<?= e($me['username']) ?>"><?= e($me['username']) ?></div>
+      <div class="sb-role">Administrador</div>
+      <form method="post" action="logout.php"><?= csrf_field() ?><button class="sb-out" title="Cerrar sesión"><span class="sb-out-l">Cerrar sesión</span><span class="sb-out-s">Salir</span></button></form>
+    </div>
+  </aside>
+  <main class="app">
+    <div class="app-head">
+      <h1><?= e($pageTitle) ?></h1>
+      <p class="hint"><?= e($pageDesc) ?></p>
+    </div>
+    <?php if (data_dir_is_public()): ?>
+      <p class="msg err">Seguridad: la carpeta de datos (usuarios, contraseñas, registros) está dentro de la web.
+      Muévala fuera de public_html dejando <code>DATA_DIR</code> vacío o con una ruta como <code>/home/USUARIO/welcome-kiosk-data</code> en <code>inc/settings.php</code>.</p>
+    <?php endif; ?>
+<?php else: ?>
 <header class="topbar">
   <strong class="brand"><img src="assets/favicon-light.svg" alt="" width="32" height="32"> Welcome Bezares · Panel</strong>
   <span class="who"><?= e($me['username']) ?> · <?= $isAdmin ? 'Administrador' : 'Mantenedor' ?></span>
@@ -456,12 +525,14 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
   Muévala fuera de public_html dejando <code>DATA_DIR</code> vacío o con una ruta como <code>/home/USUARIO/welcome-kiosk-data</code> en <code>inc/settings.php</code>.</p>
 <?php endif; ?>
 
-<div class="layout">
+<?php endif; ?>
+<div class="layout<?= $showPreview ? '' : ' single' ?>">
 <div class="col-main">
 
 <?php foreach ($flashes as [$t, $m]): ?><p class="msg <?= e($t) ?>"><?= e($m) ?></p><?php endforeach; ?>
 
 <!-- ============ TEMA (mantenedor) ============ -->
+<?php if ($sec('tema')): ?>
 <section id="tema" class="card">
   <form method="post" class="theme-form" data-autosubmit>
     <?= csrf_field() ?><input type="hidden" name="action" value="save_theme">
@@ -478,8 +549,10 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     <noscript><button class="btn primary">Aplicar</button></noscript>
   </form>
 </section>
+<?php endif; ?>
 
 <!-- ============ CONTENIDO (mantenedor) ============ -->
+<?php if ($sec('contenido')): ?>
 <section id="contenido" class="card">
   <h2>Textos centrales</h2>
   <form method="post">
@@ -505,7 +578,9 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     <button class="btn primary">Guardar textos</button>
   </form>
 </section>
+<?php endif; ?>
 
+<?php if ($sec('logos')): ?>
 <section id="logos" class="card">
   <h2>Logotipo inferior</h2>
   <div class="logo-grid">
@@ -532,7 +607,9 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
   </form>
   <p class="hint">SVG o PNG con fondo transparente recomendado. Máx. <?= MAX_UPLOAD_BYTES / 1048576 ?> MB.</p>
 </section>
+<?php endif; ?>
 
+<?php if ($sec('reset')): ?>
 <section class="card warn">
   <h2>Restablecer configuración por defecto</h2>
   <p>Quita los dos textos centrales, vuelve al logo de Bezares y <strong>borra todos los logos subidos</strong>.</p>
@@ -541,9 +618,11 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     <button class="btn danger">Restablecer por defecto</button>
   </form>
 </section>
+<?php endif; ?>
 
 <?php if ($isAdmin): ?>
 <!-- ============ APARIENCIA (admin) ============ -->
+<?php if ($sec('apariencia')): ?>
 <section id="apariencia" class="card">
   <h2>Imágenes</h2>
   <div class="img-grid">
@@ -600,8 +679,10 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     <button class="btn primary">Guardar apariencia</button>
   </form>
 </section>
+<?php endif; ?>
 
 <!-- ============ TEMA OSCURO (admin) ============ -->
+<?php if ($sec('oscuro')): ?>
 <section id="oscuro" class="card">
   <h2>Tema oscuro</h2>
   <p class="hint">Lo activa el mantenedor con el selector «Tema de la pantalla». Textos, animaciones, iconos y ventanas son los mismos; aquí se definen las imágenes y los colores alternativos.</p>
@@ -641,8 +722,10 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     <p><button class="btn primary">Guardar tema oscuro</button></p>
   </form>
 </section>
+<?php endif; ?>
 
 <!-- ============ ICONOS (admin) ============ -->
+<?php if ($sec('iconos')): ?>
 <section id="iconos" class="card">
   <h2>Iconos del rodapié</h2>
   <?php foreach ($c['icons'] as $i => $ic): ?>
@@ -714,8 +797,10 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     <button class="btn primary">Guardar dominios</button>
   </form>
 </section>
+<?php endif; ?>
 
 <!-- ============ INTEGRACIÓN (admin) ============ -->
+<?php if ($sec('integracion')): ?>
 <section id="integracion" class="card">
   <h2>Webs de confianza (iframe)</h2>
   <p class="hint">Por seguridad, el kiosco y el panel solo se pueden mostrar dentro de un iframe en este mismo sitio. Añada aquí las webs que pueden incrustarlos,
@@ -733,8 +818,10 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     <button class="btn primary">Guardar webs de confianza</button>
   </form>
 </section>
+<?php endif; ?>
 
 <!-- ============ USUARIOS (admin) ============ -->
+<?php if ($sec('usuarios')): ?>
 <section id="usuarios" class="card">
   <h2>Usuarios</h2>
   <table class="users">
@@ -771,7 +858,9 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
   <p class="hint">Contraseñas: mínimo <?= MIN_PASSWORD ?> caracteres y 3 tipos (minúsculas, mayúsculas, números, símbolos).
     El enlace de «¿Olvidó su contraseña?» se envía al correo de recuperación; si está vacío y el usuario es un correo, se usa ese.</p>
 </section>
+<?php endif; ?>
 
+<?php if ($sec('peligro')): ?>
 <section id="peligro" class="card warn">
   <h2>Restablecer todo de fábrica</h2>
   <p>Vuelve a la configuración inicial completa (imágenes, colores, iconos y contenido) y borra todas las imágenes subidas. Los usuarios se mantienen.</p>
@@ -780,8 +869,10 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
   </form>
 </section>
 <?php endif; ?>
+<?php endif; ?>
 
 <!-- ============ MI CUENTA ============ -->
+<?php if ($sec('cuenta')): ?>
 <section id="cuenta" class="card">
   <h2>Mi contraseña</h2>
   <form method="post" class="grid3">
@@ -792,9 +883,11 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     <button class="btn primary">Cambiar contraseña</button>
   </form>
 </section>
+<?php endif; ?>
 
 </div>
 
+<?php if ($showPreview): ?>
 <aside class="col-preview">
   <div class="preview-head">
     <strong>Vista previa</strong>
@@ -805,6 +898,11 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     <iframe id="preview" src="<?= e(KIOSK_FILE) ?>?preview=1" title="Vista previa del kiosco"></iframe>
   </div>
 </aside>
+<?php endif; ?>
 </div>
+<?php if ($isAdmin): ?>
+  </main>
+</div>
+<?php endif; ?>
 </body>
 </html>
