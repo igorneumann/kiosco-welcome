@@ -42,6 +42,7 @@ const ADMIN_ALLOW_IPS = [];
 // Sesión: cierre por inactividad y duración máxima (segundos)
 const SESSION_IDLE = 1800;   // 30 min
 const SESSION_MAX  = 28800;  // 8 h
+const REMEMBER_DAYS = 30;    // «Mantener sesión iniciada»: duración máxima de la sesión en ese navegador
 
 // Protección contra fuerza bruta
 // - Por IP + usuario: 5 fallos → bloqueo de 5 min que se duplica en cada reincidencia (máx. 1 h).

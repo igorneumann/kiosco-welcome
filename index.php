@@ -85,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     });
                     $u['hash'] = $newHash;
                 }
-                login_user($u);
+                login_user($u, !empty($_POST['remember']));
                 auth_log('login_ok', $u['username']);
                 redirect('admin.php');
             }
@@ -108,6 +108,7 @@ $flashes = flash_take();
 <meta name="robots" content="noindex, nofollow">
 <title>Acceso · Welcome Bezares</title>
 <link rel="stylesheet" href="assets/admin.css">
+<script src="assets/login.js" defer></script>
 <link rel="icon" href="assets/favicon-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
 <link rel="icon" href="assets/favicon-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
 </head>
@@ -142,6 +143,8 @@ $flashes = flash_take();
       <?= csrf_field() ?>
       <label>Usuario o correo<input name="username" required autocomplete="username" autofocus maxlength="100"></label>
       <label>Contraseña<input type="password" name="password" required autocomplete="current-password" maxlength="256"></label>
+      <label class="radio remember"><input type="checkbox" name="remember" value="1"> Mantener sesión iniciada</label>
+      <p class="hint remember-hint">Durante <?= REMEMBER_DAYS ?> días en este navegador. No lo marque en equipos compartidos.</p>
       <button class="btn primary" type="submit">Entrar</button>
     </form>
     <p class="login-links"><a href="forgot.php">¿Olvidó su contraseña?</a></p>

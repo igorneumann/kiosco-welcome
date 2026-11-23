@@ -89,6 +89,7 @@ La respuesta es siempre la misma (no revela si el usuario existe), hay límite d
 **Datos y sesiones**
 - Fuera de `public_html`, permisos 700/600, escrituras atómicas (archivo temporal + renombrado).
 - Contraseñas con Argon2id/bcrypt (mín. 10 caracteres y 3 tipos). Sesión `__Host-`, HttpOnly, Secure, SameSite=Strict, caducidad 30 min sin uso / 8 h; cambiar la contraseña cierra las demás sesiones.
+- Pantalla de acceso con botón **Ver contraseña** y casilla **Mantener sesión iniciada**: la sesión dura hasta `REMEMBER_DAYS` (30) días en ese navegador aunque se cierre; se invalida igualmente al cerrar sesión, al cambiar la contraseña o si cambia el navegador.
 - Token CSRF en todos los formularios; permisos comprobados en el servidor; CSP estricta; HTTPS forzado; `robots.txt` + `noindex`.
 
 **Recuperación de contraseña**

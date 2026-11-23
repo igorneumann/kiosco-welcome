@@ -98,6 +98,7 @@ if ($valid && $isPost) {
 <meta name="referrer" content="no-referrer">
 <title>Nueva contraseña · Welcome Bezares</title>
 <link rel="stylesheet" href="assets/admin.css">
+<script src="assets/login.js" defer></script>
 <link rel="icon" href="assets/favicon-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
 <link rel="icon" href="assets/favicon-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
 </head>

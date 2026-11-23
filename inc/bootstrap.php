@@ -495,7 +495,9 @@ function session_boot(): void
     ini_set('session.use_trans_sid', '0');
     ini_set('session.gc_probability', '1');
     ini_set('session.gc_divisor', '50');
-    ini_set('session.gc_maxlifetime', (string)SESSION_MAX);
+    // Los archivos de sesión deben durar lo que la opción «Mantener sesión iniciada»; la caducidad real de
+    // cada sesión la controla current_user() (30 min sin uso / 8 h, o REMEMBER_DAYS si se marcó la opción).
+    ini_set('session.gc_maxlifetime', (string)max(SESSION_MAX, REMEMBER_DAYS * 86400));
     ini_set('session.sid_length', '48');
     session_name(is_https() ? '__Host-WKSID' : 'WKSID');
     session_set_cookie_params([
@@ -586,8 +588,10 @@ function current_user(): ?array
     $now = time();
     $s = $_SESSION;
     $u = user_find((string)$s['user']);
-    $expired = ($now - ($s['last'] ?? 0)) > SESSION_IDLE
-            || ($now - ($s['started'] ?? 0)) > SESSION_MAX;
+    $remember = !empty($s['remember']);
+    $expired = $remember
+        ? ($now - ($s['started'] ?? 0)) > REMEMBER_DAYS * 86400
+        : (($now - ($s['last'] ?? 0)) > SESSION_IDLE || ($now - ($s['started'] ?? 0)) > SESSION_MAX);
     if ($expired || !$u || password_fingerprint($u['hash']) !== ($s['pwfp'] ?? '')
         || ($s['ua'] ?? '') !== hash('sha256', $_SERVER['HTTP_USER_AGENT'] ?? '')) {
         logout();
@@ -597,22 +601,35 @@ function current_user(): ?array
     return $u;
 }
 
-function login_user(array $u): void
+function login_user(array $u, bool $remember = false): void
 {
     session_regenerate_id(true);
     $_SESSION = [
-        'user'    => $u['username'],
-        'pwfp'    => password_fingerprint($u['hash']),
-        'started' => time(),
-        'last'    => time(),
-        'ua'      => hash('sha256', $_SERVER['HTTP_USER_AGENT'] ?? ''),
-        'csrf'    => bin2hex(random_bytes(32)),
+        'user'     => $u['username'],
+        'pwfp'     => password_fingerprint($u['hash']),
+        'started'  => time(),
+        'last'     => time(),
+        'ua'       => hash('sha256', $_SERVER['HTTP_USER_AGENT'] ?? ''),
+        'csrf'     => bin2hex(random_bytes(32)),
+        'remember' => $remember,
     ];
+    if ($remember) {
+        // Cookie persistente: la sesión sobrevive al cierre del navegador hasta REMEMBER_DAYS días.
+        // Se sigue invalidando al cerrar sesión, al cambiar la contraseña o si cambia el navegador.
+        setcookie(session_name(), session_id(), [
+            'expires' => time() + REMEMBER_DAYS * 86400, 'path' => '/', 'secure' => is_https(),
+            'httponly' => true, 'samesite' => 'Strict',
+        ]);
+    }
 }
 
 function logout(): void
 {
     $_SESSION = [];
+    if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+        // Borra también una cookie persistente de «Mantener sesión iniciada»
+        setcookie(session_name(), '', ['expires' => time() - 3600, 'path' => '/', 'secure' => is_https(), 'httponly' => true, 'samesite' => 'Strict']);
+    }
     if (session_status() === PHP_SESSION_ACTIVE) {
         session_regenerate_id(true);
     }
