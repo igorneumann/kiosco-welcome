@@ -23,6 +23,25 @@ return [
     'bg_pulse_scale'     => 1.05,       // 1.00 = sin pulso
     'bg_pulse_duration'  => 2.4,        // segundos por latido
     'popup_idle_close'   => 0,          // segundos; 0 = desactivado
+
+    // Tema oscuro (lo activa el mantenedor; los valores los define el administrador)
+    'dark' => [
+        'header_image'       => 'assets/defaults/header-dark.svg',
+        'background_image'   => 'assets/defaults/background-dark.svg',
+        'page_bg'            => '#0d1419',
+        'welcome_color'      => '#e6eef3',
+        'welcome_color2'     => '#009fe3',
+        'text_color'         => '#e6eef3',
+        'line_color'         => '#45515b',
+        'footer_title_color' => '#c9d3da',
+        'footer_bg'          => '#1b242b',
+        'footer_fg'          => '#e6eef3',
+        'footer_strip'       => '#f5333f',
+        'logo_tile'          => true,   // logo sobre placa blanca (exigido por el manual de marca)
+    ],
+
+    // Webs de confianza que pueden mostrar el kiosco dentro de un iframe (una por línea)
+    'embed_origins'      => '',
     // Dominios que se pueden mostrar en las ventanas del kiosco ("*.dominio" = subdominios).
     // El propio kiosco (welcome.bezares.com) nunca se puede incrustar aunque encaje en la lista.
     'frame_domains'      => "bezares.com\n*.bezares.com\nwww.youtube-nocookie.com",
@@ -31,7 +50,7 @@ return [
     'icons' => [
         [
             'id' => 'web', 'label' => '',
-            'icon' => 'globe', 'icon_image' => 'assets/defaults/icon-web.svg',
+            'icon' => 'globe', 'icon_image' => 'assets/defaults/icon-web.svg', 'icon_image_dark' => 'assets/defaults/icon-web-dark.svg',
             'type' => 'url', 'url' => 'https://www.bezares.com/', 'youtube_id' => '',
             'display' => 'fullscreen', 'width' => '100%', 'height' => '100%',
             'close_text' => 'CERRAR / CLOSE', 'close_bg' => '#f5333f', 'close_fg' => '#ffffff',
@@ -40,7 +59,7 @@ return [
         ],
         [
             'id' => 'newsletter', 'label' => '',
-            'icon' => 'mail', 'icon_image' => 'assets/defaults/icon-newsletter.svg',
+            'icon' => 'mail', 'icon_image' => 'assets/defaults/icon-newsletter.svg', 'icon_image_dark' => 'assets/defaults/icon-newsletter-dark.svg',
             'type' => 'url', 'url' => 'https://mailing.bezares.com/subscribe.php?lang=both&kiosco=86217ec2d996c794', 'youtube_id' => '',
             'display' => 'popup', 'width' => '580px', 'height' => '470px',
             'close_text' => 'CERRAR / CLOSE', 'close_bg' => '#f5333f', 'close_fg' => '#ffffff',
@@ -49,7 +68,7 @@ return [
         ],
         [
             'id' => 'video', 'label' => '',
-            'icon' => 'play', 'icon_image' => 'assets/defaults/icon-video.svg',
+            'icon' => 'play', 'icon_image' => 'assets/defaults/icon-video.svg', 'icon_image_dark' => 'assets/defaults/icon-video-dark.svg',
             'type' => 'youtube', 'url' => 'https://youtu.be/oxlym8KrOlE', 'youtube_id' => 'oxlym8KrOlE',
             'display' => 'popup', 'width' => '100%', 'height' => 'auto',
             'close_text' => 'CERRAR / CLOSE', 'close_bg' => '#f5333f', 'close_fg' => '#ffffff',
@@ -60,6 +79,7 @@ return [
 
     // --- Mantenedor ---
     // Texto central 1 (arriba) y texto central 2 (debajo), cada uno con su tamaño y negrita
+    'theme'              => 'light',    // light | dark (lo elige el mantenedor)
     'center_text'        => '',
     'center_font_mode'   => 'auto',     // auto | fixed
     'center_font_size'   => 6,          // en % del ancho de pantalla (vw) cuando es manual

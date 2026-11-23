@@ -11,6 +11,14 @@ header('X-Robots-Tag: noindex, nofollow');
 
 $c = config_get();
 $domains = frame_domains_parse($c['frame_domains']);
+$dark = ($c['theme'] ?? 'light') === 'dark';
+if ($dark) {
+    // El tema oscuro sustituye imágenes y colores; todo lo demás es común a los dos temas.
+    foreach (['header_image', 'background_image', 'page_bg', 'welcome_color', 'welcome_color2', 'text_color', 'line_color',
+              'footer_title_color', 'footer_bg', 'footer_fg', 'footer_strip'] as $k) {
+        $c[$k] = $c['dark'][$k];
+    }
+}
 
 $icons = [];
 foreach ($c['icons'] as $ic) {
@@ -22,7 +30,7 @@ foreach ($c['icons'] as $ic) {
         'allow_same_origin' => !empty($ic['allow_same_origin']),
         'label'          => (string)$ic['label'],
         'icon'           => in_array($ic['icon'], BUILTIN_ICONS, true) ? $ic['icon'] : 'info',
-        'icon_image'     => (string)$ic['icon_image'],
+        'icon_image'     => icon_image_for_theme($ic, $dark),
         'type'           => $ic['type'] === 'youtube' ? 'youtube' : 'url',
         'url'            => $blocked ? '' : (string)$ic['url'],
         'youtube_id'     => (string)$ic['youtube_id'],
@@ -39,6 +47,8 @@ foreach ($c['icons'] as $ic) {
 
 echo json_encode([
     'version'           => $c['version'],
+    'theme'             => $dark ? 'dark' : 'light',
+    'logo_tile'         => $dark && !empty($c['dark']['logo_tile']),
     'frame_domains'     => $domains,
     'header_image'      => $c['header_image'],
     'background_image'  => $c['background_image'],

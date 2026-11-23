@@ -28,6 +28,18 @@ La URL del kiosco la sirve `kiosk.php` (regla de `.htaccess`) para enviar una CS
 
 **Administrador**: todo lo anterior, más imagen de encabezado, imagen de fondo, logo por defecto, textos de bienvenida (uno por línea, se alternan), colores (rodapié, líneas, textos, fondo), intensidad y velocidad del latido del fondo, iconos del rodapié (añadir hasta 8, quitar, ordenar, icono integrado o imagen propia, URL / código iframe / YouTube, ventana emergente o página completa, ancho, alto, texto, color, posición y tamaño del botón de cierre), usuarios y restablecimiento total.
 
+## Tema claro / oscuro
+
+El tema **claro** es el predeterminado. El mantenedor (y el administrador) lo cambia con el selector deslizante **Tema de la pantalla**, arriba del panel; el kiosco lo aplica en menos de un minuto. El tema oscuro usa versiones oscuras del encabezado, del fondo y de los tres iconos (incluidas en `assets/defaults/*-dark.svg`) y muestra el logo inferior sobre una placa blanca, como pide el manual de marca. El administrador define sus imágenes y colores en la sección **Tema oscuro**, y cada icono del rodapié admite una imagen opcional para el tema oscuro. *Restablecer por defecto* vuelve al tema claro.
+
+## Kiosco dentro de otras webs
+
+Por defecto el kiosco solo se puede mostrar dentro de un iframe en el propio sitio. En **Integración → Webs de confianza** el administrador añade las webs que pueden incrustarlo (`www.bezares.com`, `*.bezares.com`, con puerto opcional; solo https). Se aplica con la cabecera CSP `frame-ancestors` que envía `kiosk.php`.
+
+## Icono
+
+`assets/favicon-light.svg` y `assets/favicon-dark.svg` (32×32): un kiosco con la Bz en la pantalla y una W en la base. Se usan como icono de pestaña (claro u oscuro según el tema del navegador) y en la barra del panel.
+
 ## ¿Olvidó su contraseña?
 
 En la pantalla de acceso hay un enlace **¿Olvidó su contraseña?**. Se indica el usuario o el correo y se envía un enlace válido 30 minutos y de un solo uso a:

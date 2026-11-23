@@ -22,6 +22,8 @@ foreach (frame_domains_parse(config_get()['frame_domains']) as $d) {
 // El reproductor de YouTube se carga siempre desde youtube-nocookie
 $sources[] = 'https://www.youtube-nocookie.com';
 $frameSrc = implode(' ', array_unique($sources));
+// Webs de confianza (administración) que pueden mostrar el kiosco dentro de un iframe
+$ancestors = implode(' ', array_merge(["'self'"], embed_origins_parse(config_get()['embed_origins'])));
 
 header('Content-Type: text/html; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -30,5 +32,5 @@ header('X-Robots-Tag: noindex, nofollow, noarchive');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
 header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-     . "connect-src 'self'; frame-src {$frameSrc}; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; object-src 'none'");
+     . "connect-src 'self'; frame-src {$frameSrc}; frame-ancestors {$ancestors}; base-uri 'none'; form-action 'none'; object-src 'none'");
 readfile(__DIR__ . '/' . KIOSK_FILE);

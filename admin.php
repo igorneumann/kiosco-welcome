@@ -20,7 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = post_str('action', 40);
     $anchor = '';
 
-    $adminOnly = ['save_frame_domains', 'user_email', 'save_general', 'upload_header', 'remove_header', 'upload_background', 'remove_background',
+    $adminOnly = ['save_dark', 'upload_dark_header', 'upload_dark_background', 'remove_dark_header', 'remove_dark_background',
+                  'save_embed', 'save_frame_domains', 'user_email', 'save_general', 'upload_header', 'remove_header', 'upload_background', 'remove_background',
                   'upload_default_logo', 'save_icon', 'add_icon', 'delete_icon', 'move_icon',
                   'user_add', 'user_password', 'user_delete', 'reset_all'];
     if (in_array($action, $adminOnly, true) && !$isAdmin) {
@@ -43,6 +44,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 });
                 flash('Textos centrales guardados.');
+                break;
+
+            case 'save_theme':
+                $anchor = 'tema';
+                $theme = !empty($_POST['theme_dark']) ? 'dark' : 'light';
+                config_update(function (array &$c) use ($theme) { $c['theme'] = $theme; });
+                auth_log('theme:' . $theme, $me['username']);
+                flash($theme === 'dark' ? 'Tema oscuro activado en el kiosco.' : 'Tema claro activado en el kiosco.');
                 break;
 
             case 'upload_logo':
@@ -87,13 +96,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     foreach ($c['logos'] as $l) { delete_upload($l); }
                     $c['logos']            = [];
                     $c['bottom_logo']      = '';
+                    $c['theme']            = $d['theme'];
                     foreach (['center_text', 'center_font_mode', 'center_font_size', 'center_bold',
                               'center_text2', 'center_font_mode2', 'center_font_size2', 'center_bold2'] as $k) {
                         $c[$k] = $d[$k];
                     }
                 });
                 auth_log('reset_content', $me['username']);
-                flash('Configuración restablecida: sin textos centrales, logo de Bezares y logos subidos eliminados.');
+                flash('Configuración restablecida: sin textos centrales, tema claro, logo de Bezares y logos subidos eliminados.');
                 break;
 
             case 'change_own_password':
@@ -165,6 +175,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 flash('Imagen quitada.');
                 break;
 
+            case 'save_dark':
+                $anchor = 'oscuro';
+                config_update(function (array &$c) {
+                    $d = config_defaults()['dark'];
+                    foreach (['page_bg', 'welcome_color', 'welcome_color2', 'text_color', 'line_color', 'footer_title_color',
+                              'footer_bg', 'footer_fg', 'footer_strip'] as $k) {
+                        $c['dark'][$k] = post_color('dark_' . $k, $d[$k]);
+                    }
+                    $c['dark']['logo_tile'] = !empty($_POST['dark_logo_tile']);
+                });
+                flash('Colores del tema oscuro guardados.');
+                break;
+
+            case 'upload_dark_header':
+            case 'upload_dark_background':
+                $anchor = 'oscuro';
+                $key = $action === 'upload_dark_header' ? 'header_image' : 'background_image';
+                $path = handle_upload('image', $action === 'upload_dark_header' ? 'darkheader' : 'darkbg');
+                if (!$path) { throw new RuntimeException('Seleccione una imagen.'); }
+                config_update(function (array &$c) use ($key, $path) {
+                    delete_upload($c['dark'][$key] ?? '');
+                    $c['dark'][$key] = $path;
+                });
+                flash('Imagen del tema oscuro actualizada.');
+                break;
+
+            case 'remove_dark_header':
+            case 'remove_dark_background':
+                $anchor = 'oscuro';
+                $key = $action === 'remove_dark_header' ? 'header_image' : 'background_image';
+                $mode = post_enum('mode', ['none', 'default'], 'none');
+                config_update(function (array &$c) use ($key, $mode) {
+                    delete_upload($c['dark'][$key] ?? '');
+                    $c['dark'][$key] = $mode === 'default' ? config_defaults()['dark'][$key] : '';
+                });
+                flash($mode === 'default' ? 'Imagen original restaurada.' : 'Imagen quitada.');
+                break;
+
+            case 'save_embed':
+                $anchor = 'integracion';
+                $list = embed_origins_parse(post_str('embed_origins', 2000));
+                config_update(function (array &$c) use ($list) {
+                    $c['embed_origins'] = implode("\n", $list);
+                });
+                auth_log('embed_origins:' . count($list), $me['username']);
+                flash('Webs de confianza guardadas (' . count($list) . ').');
+                break;
+
             case 'save_frame_domains':
                 $anchor = 'iconos';
                 $list = frame_domains_parse(post_str('frame_domains', 2000));
@@ -197,13 +255,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $id = post_str('id', 20);
                 $anchor = 'icon-' . $id;
                 $upload = $action === 'save_icon' ? handle_upload('icon_file', 'icon') : null;
-                config_update(function (array &$c) use ($action, $id, $upload, &$anchor) {
+                $uploadDark = $action === 'save_icon' ? handle_upload('icon_file_dark', 'icondark') : null;
+                config_update(function (array &$c) use ($action, $id, $upload, $uploadDark, &$anchor) {
                     $idx = null;
                     foreach ($c['icons'] as $i => $ic) { if ($ic['id'] === $id) { $idx = $i; } }
-                    if ($idx === null) { delete_upload($upload); throw new RuntimeException('Icono no encontrado.'); }
+                    if ($idx === null) { delete_upload($upload); delete_upload($uploadDark); throw new RuntimeException('Icono no encontrado.'); }
 
                     if ($action === 'delete_icon') {
                         delete_upload($c['icons'][$idx]['icon_image']);
+                        delete_upload($c['icons'][$idx]['icon_image_dark'] ?? '');
                         array_splice($c['icons'], $idx, 1);
                         $anchor = 'iconos';
                         return;
@@ -225,6 +285,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } elseif (!empty($_POST['icon_remove'])) {
                         delete_upload($ic['icon_image']);
                         $ic['icon_image'] = '';
+                    }
+                    if ($uploadDark) {
+                        delete_upload($ic['icon_image_dark'] ?? '');
+                        $ic['icon_image_dark'] = $uploadDark;
+                    } elseif (!empty($_POST['icon_remove_dark'])) {
+                        delete_upload($ic['icon_image_dark'] ?? '');
+                        $ic['icon_image_dark'] = '';
                     }
                     $ic['type'] = post_enum('type', ['url', 'youtube'], 'url');
                     $raw = post_str('url', 2000);
@@ -362,20 +429,24 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
 <meta name="robots" content="noindex, nofollow">
 <title>Panel · Welcome Bezares</title>
 <link rel="stylesheet" href="assets/admin.css">
+<link rel="icon" href="assets/favicon-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+<link rel="icon" href="assets/favicon-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
 <script src="assets/icons.js" defer></script>
 <script src="assets/admin.js" defer></script>
 </head>
 <body>
 <header class="topbar">
-  <strong>Welcome Bezares · Panel</strong>
+  <strong class="brand"><img src="assets/favicon-light.svg" alt="" width="32" height="32"> Welcome Bezares · Panel</strong>
   <span class="who"><?= e($me['username']) ?> · <?= $isAdmin ? 'Administrador' : 'Mantenedor' ?></span>
   <a class="btn" href="<?= e(KIOSK_FILE) ?>" target="_blank" rel="noopener">Abrir kiosco ↗</a>
   <form method="post" action="logout.php" class="inline"><?= csrf_field() ?><button class="btn">Cerrar sesión</button></form>
 </header>
 
 <nav class="tabs">
+  <a href="#tema">Tema</a>
   <a href="#contenido">Contenido</a>
   <?php if ($isAdmin): ?><a href="#apariencia">Apariencia</a><a href="#iconos">Iconos</a><a href="#usuarios">Usuarios</a><?php endif; ?>
+  <?php if ($isAdmin): ?><a href="#integracion">Integración</a><?php endif; ?>
   <a href="#cuenta">Mi cuenta</a>
 </nav>
 <?php if ($isAdmin && data_dir_is_public()): ?>
@@ -387,6 +458,24 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
 <div class="col-main">
 
 <?php foreach ($flashes as [$t, $m]): ?><p class="msg <?= e($t) ?>"><?= e($m) ?></p><?php endforeach; ?>
+
+<!-- ============ TEMA (mantenedor) ============ -->
+<section id="tema" class="card">
+  <form method="post" class="theme-form" data-autosubmit>
+    <?= csrf_field() ?><input type="hidden" name="action" value="save_theme">
+    <div>
+      <h2>Tema de la pantalla</h2>
+      <p class="hint">El tema claro es el predeterminado. El oscuro cambia fondo, encabezado, colores e iconos del kiosco.</p>
+    </div>
+    <label class="switch">
+      <span class="switch-label">Claro</span>
+      <input type="checkbox" name="theme_dark" value="1" role="switch" aria-label="Tema oscuro"<?= ($c['theme'] ?? 'light') === 'dark' ? ' checked' : '' ?>>
+      <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+      <span class="switch-label">Oscuro</span>
+    </label>
+    <noscript><button class="btn primary">Aplicar</button></noscript>
+  </form>
+</section>
 
 <!-- ============ CONTENIDO (mantenedor) ============ -->
 <section id="contenido" class="card">
@@ -474,7 +563,7 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     <?php endforeach; ?>
   </div>
 
-  <h2>Textos, colores y animaciones</h2>
+  <h2>Textos, colores y animaciones <small class="hint">(tema claro)</small></h2>
   <form method="post">
     <?= csrf_field() ?><input type="hidden" name="action" value="save_general">
     <div class="grid2">
@@ -510,6 +599,47 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
   </form>
 </section>
 
+<!-- ============ TEMA OSCURO (admin) ============ -->
+<section id="oscuro" class="card">
+  <h2>Tema oscuro</h2>
+  <p class="hint">Lo activa el mantenedor con el selector «Tema de la pantalla». Textos, animaciones, iconos y ventanas son los mismos; aquí se definen las imágenes y los colores alternativos.</p>
+  <div class="img-grid">
+    <?php foreach ([['header_image', 'upload_dark_header', 'remove_dark_header', 'Encabezado (oscuro)'],
+                    ['background_image', 'upload_dark_background', 'remove_dark_background', 'Fondo (oscuro)']] as [$k, $up, $rm, $title]): ?>
+      <div class="img-box dark-box">
+        <h3><?= e($title) ?></h3>
+        <?php if ($c['dark'][$k]): ?><img src="<?= e($c['dark'][$k]) ?>" alt=""><?php else: ?><p class="hint">Sin imagen</p><?php endif; ?>
+        <form method="post" enctype="multipart/form-data">
+          <?= csrf_field() ?><input type="hidden" name="action" value="<?= $up ?>">
+          <input type="file" name="image" accept="image/svg+xml,image/png,image/jpeg,image/webp,image/gif" required>
+          <button class="btn small primary">Cambiar</button>
+        </form>
+        <div class="row">
+          <?php if ($c['dark'][$k]): ?>
+            <form method="post" class="inline" data-confirm="¿Quitar esta imagen?"><?= csrf_field() ?><input type="hidden" name="action" value="<?= $rm ?>"><input type="hidden" name="mode" value="none"><button class="btn small">Quitar</button></form>
+          <?php endif; ?>
+          <?php if ($c['dark'][$k] !== config_defaults()['dark'][$k]): ?>
+            <form method="post" class="inline"><?= csrf_field() ?><input type="hidden" name="action" value="<?= $rm ?>"><input type="hidden" name="mode" value="default"><button class="btn small">Restaurar original</button></form>
+          <?php endif; ?>
+        </div>
+      </div>
+    <?php endforeach; ?>
+  </div>
+  <form method="post">
+    <?= csrf_field() ?><input type="hidden" name="action" value="save_dark">
+    <div class="colors">
+      <?php foreach (['page_bg' => 'Fondo de página', 'welcome_color' => 'Bienvenida (1.º, 3.º…)', 'welcome_color2' => 'Bienvenida (2.º, 4.º…)',
+                      'text_color' => 'Texto central', 'line_color' => 'Líneas decorativas', 'footer_title_color' => 'Título sobre rodapié',
+                      'footer_bg' => 'Fondo rodapié', 'footer_fg' => 'Iconos/texto rodapié', 'footer_strip' => 'Franja inferior'] as $k => $n): ?>
+        <label><?= e($n) ?><input type="color" name="dark_<?= $k ?>" value="<?= e($c['dark'][$k]) ?>"></label>
+      <?php endforeach; ?>
+    </div>
+    <label class="radio"><input type="checkbox" name="dark_logo_tile" value="1"<?= !empty($c['dark']['logo_tile']) ? ' checked' : '' ?>>
+      Mostrar el logo inferior sobre una placa blanca (el manual de marca pide el logo siempre sobre fondo claro)</label>
+    <p><button class="btn primary">Guardar tema oscuro</button></p>
+  </form>
+</section>
+
 <!-- ============ ICONOS (admin) ============ -->
 <section id="iconos" class="card">
   <h2>Iconos del rodapié</h2>
@@ -531,6 +661,12 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
           <label>…o imagen propia (SVG, PNG, JPG, WEBP)
             <input type="file" name="icon_file" accept="image/svg+xml,image/png,image/jpeg,image/webp,image/gif">
             <?php if ($ic['icon_image']): ?><span class="radio"><input type="checkbox" name="icon_remove" value="1"> quitar imagen propia</span><?php endif; ?></label>
+        </div>
+        <div class="grid3">
+          <label class="span2">Imagen para el tema oscuro (opcional; si no hay, se usa la misma)
+            <input type="file" name="icon_file_dark" accept="image/svg+xml,image/png,image/jpeg,image/webp,image/gif">
+            <?php if (!empty($ic['icon_image_dark'])): ?><span class="radio"><input type="checkbox" name="icon_remove_dark" value="1"> quitar imagen oscura</span><?php endif; ?></label>
+          <?php if (icon_image_for_theme($ic, true) !== ''): ?><span class="icon-dark-preview"><img src="<?= e(icon_image_for_theme($ic, true)) ?>" alt="Vista en tema oscuro"></span><?php endif; ?>
         </div>
         <div class="grid3">
           <label>Contenido
@@ -574,6 +710,21 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
       Solo https. El propio kiosco, las IP y los nombres de red local están siempre prohibidos.
       <textarea name="frame_domains" rows="4"><?= e($c['frame_domains']) ?></textarea></label>
     <button class="btn primary">Guardar dominios</button>
+  </form>
+</section>
+
+<!-- ============ INTEGRACIÓN (admin) ============ -->
+<section id="integracion" class="card">
+  <h2>Webs de confianza (kiosco dentro de un iframe)</h2>
+  <p class="hint">Por seguridad, el kiosco solo se puede mostrar dentro de un iframe en este mismo sitio. Añada aquí las webs que pueden incrustarlo,
+    una por línea: <code>www.bezares.com</code> (esa web), <code>*.bezares.com</code> (cualquier subdominio) o con puerto <code>intranet.bezares.com:8443</code>. Solo https.</p>
+  <form method="post">
+    <?= csrf_field() ?><input type="hidden" name="action" value="save_embed">
+    <label>Webs de confianza
+      <textarea name="embed_origins" rows="4" placeholder="www.bezares.com"><?= e($c['embed_origins']) ?></textarea></label>
+    <p class="hint">Código para insertarlo en esas webs:<br>
+      <code>&lt;iframe src="<?= e(rtrim(BASE_URL, '/') . '/' . KIOSK_FILE) ?>" style="width:100%;aspect-ratio:9/16;border:0" title="Welcome Bezares"&gt;&lt;/iframe&gt;</code></p>
+    <button class="btn primary">Guardar webs de confianza</button>
   </form>
 </section>
 

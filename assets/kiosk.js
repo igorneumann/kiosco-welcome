@@ -42,6 +42,8 @@
     r.setProperty('--pulse-scale', String(c.bg_pulse_scale || 1));
     r.setProperty('--pulse-duration', (c.bg_pulse_duration || 2.4) + 's');
 
+    document.documentElement.classList.toggle('theme-dark', c.theme === 'dark');
+    $('#logo').classList.toggle('tile', !!c.logo_tile);
     $('#bg').style.backgroundImage = c.background_image ? cssUrl(c.background_image) : 'none';
 
     var header = $('#header');

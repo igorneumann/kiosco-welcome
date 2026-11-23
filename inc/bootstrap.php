@@ -282,7 +282,47 @@ function config_defaults(): array
 
 function config_get(): array
 {
-    return array_replace(config_defaults(), json_read(data_path('config.json')));
+    $c = array_replace(config_defaults(), json_read(data_path('config.json')));
+    $c['dark'] = array_replace(config_defaults()['dark'], is_array($c['dark'] ?? null) ? $c['dark'] : []);
+    return $c;
+}
+
+/** Imagen de un icono para el tema oscuro: la suya, o la variante -dark de un icono por defecto, o la clara. */
+function icon_image_for_theme(array $ic, bool $dark): string
+{
+    $light = (string)($ic['icon_image'] ?? '');
+    if (!$dark) {
+        return $light;
+    }
+    $d = (string)($ic['icon_image_dark'] ?? '');
+    if ($d !== '') {
+        return $d;
+    }
+    if (preg_match('#^assets/defaults/(icon-[a-z]+)\.svg$#', $light, $m) && is_file(APP_ROOT . "/assets/defaults/{$m[1]}-dark.svg")) {
+        return "assets/defaults/{$m[1]}-dark.svg";
+    }
+    return $light;
+}
+
+/**
+ * Webs de confianza que pueden incrustar el kiosco (texto del administrador → orígenes https para CSP).
+ * Acepta "www.bezares.com", "https://www.bezares.com", "*.bezares.com" y puerto opcional.
+ */
+function embed_origins_parse(string $text): array
+{
+    $out = [];
+    foreach (preg_split('/[\s,;]+/', strtolower($text)) as $e) {
+        $e = trim($e);
+        if ($e === '') {
+            continue;
+        }
+        $e = preg_replace('#^https://#', '', $e);
+        $e = rtrim($e, '/');
+        if (preg_match('#^(\*\.)?([a-z0-9-]+\.)+[a-z]{2,}(:\d{1,5})?$#', $e)) {
+            $out[] = 'https://' . $e;
+        }
+    }
+    return array_values(array_unique($out));
 }
 
 function config_update(callable $fn): void

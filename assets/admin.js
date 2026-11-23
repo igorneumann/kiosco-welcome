@@ -9,6 +9,14 @@
     });
   });
 
+  // Selector deslizante del tema: se aplica al cambiarlo
+  document.querySelectorAll('form[data-autosubmit] input[type=checkbox]').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      var f = cb.form;
+      f.requestSubmit ? f.requestSubmit() : f.submit();
+    });
+  });
+
   // Evitar doble envío
   document.querySelectorAll('form').forEach(function (f) {
     f.addEventListener('submit', function (e) {

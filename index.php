@@ -108,6 +108,8 @@ $flashes = flash_take();
 <meta name="robots" content="noindex, nofollow">
 <title>Acceso · Welcome Bezares</title>
 <link rel="stylesheet" href="assets/admin.css">
+<link rel="icon" href="assets/favicon-light.svg" type="image/svg+xml" media="(prefers-color-scheme: light)">
+<link rel="icon" href="assets/favicon-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)">
 </head>
 <body class="login-page">
 <main class="login-card">
