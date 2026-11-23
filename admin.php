@@ -216,8 +216,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'save_embed':
                 $anchor = 'integracion';
                 $list = embed_origins_parse(post_str('embed_origins', 2000));
-                config_update(function (array &$c) use ($list) {
+                $embedAdmin = !empty($_POST['embed_admin']);
+                config_update(function (array &$c) use ($list, $embedAdmin) {
                     $c['embed_origins'] = implode("\n", $list);
+                    $c['embed_admin'] = $embedAdmin;
                 });
                 auth_log('embed_origins:' . count($list), $me['username']);
                 flash('Webs de confianza guardadas (' . count($list) . ').');
@@ -715,15 +717,19 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
 
 <!-- ============ INTEGRACIÓN (admin) ============ -->
 <section id="integracion" class="card">
-  <h2>Webs de confianza (kiosco dentro de un iframe)</h2>
-  <p class="hint">Por seguridad, el kiosco solo se puede mostrar dentro de un iframe en este mismo sitio. Añada aquí las webs que pueden incrustarlo,
+  <h2>Webs de confianza (iframe)</h2>
+  <p class="hint">Por seguridad, el kiosco y el panel solo se pueden mostrar dentro de un iframe en este mismo sitio. Añada aquí las webs que pueden incrustarlos,
     una por línea: <code>www.bezares.com</code> (esa web), <code>*.bezares.com</code> (cualquier subdominio) o con puerto <code>intranet.bezares.com:8443</code>. Solo https.</p>
   <form method="post">
     <?= csrf_field() ?><input type="hidden" name="action" value="save_embed">
     <label>Webs de confianza
       <textarea name="embed_origins" rows="4" placeholder="www.bezares.com"><?= e($c['embed_origins']) ?></textarea></label>
+    <label class="radio"><input type="checkbox" name="embed_admin" value="1"<?= !empty($c['embed_admin']) ? ' checked' : '' ?>>
+      Permitir también el panel (acceso, recuperación de contraseña y administración) en esas webs</label>
+    <p class="hint">El inicio de sesión dentro del iframe funciona en webs del mismo dominio (p. ej. <code>cloud.bezares.com</code>); en dominios ajenos el navegador bloquea la cookie de sesión.</p>
     <p class="hint">Código para insertarlo en esas webs:<br>
-      <code>&lt;iframe src="<?= e(rtrim(BASE_URL, '/') . '/' . KIOSK_FILE) ?>" style="width:100%;aspect-ratio:9/16;border:0" title="Welcome Bezares"&gt;&lt;/iframe&gt;</code></p>
+      Kiosco: <code>&lt;iframe src="<?= e(rtrim(BASE_URL, '/') . '/' . KIOSK_FILE) ?>" style="width:100%;aspect-ratio:9/16;border:0" title="Welcome Bezares"&gt;&lt;/iframe&gt;</code><br>
+      Panel: <code>&lt;iframe src="<?= e(rtrim(BASE_URL, '/') . '/') ?>" style="width:100%;height:100vh;border:0" title="Welcome Bezares · Panel"&gt;&lt;/iframe&gt;</code></p>
     <button class="btn primary">Guardar webs de confianza</button>
   </form>
 </section>

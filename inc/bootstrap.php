@@ -530,14 +530,23 @@ function csrf_check(): void
 
 function security_headers(): void
 {
-    header('X-Frame-Options: DENY');
+    // Panel de administración dentro de un iframe: solo en las webs de confianza (Integración) y si el
+    // administrador lo permite. Si no, prohibido (X-Frame-Options DENY + frame-ancestors 'none').
+    $c = config_get();
+    $origins = !empty($c['embed_admin']) ? embed_origins_parse((string)$c['embed_origins']) : [];
+    if ($origins) {
+        $ancestors = "'self' " . implode(' ', $origins);
+    } else {
+        header('X-Frame-Options: DENY');
+        $ancestors = "'none'";
+    }
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: same-origin');
     header('X-Robots-Tag: noindex, nofollow, noarchive');
     header('Cache-Control: no-store, no-cache, must-revalidate');
     header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
     header("Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
-         . "frame-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
+         . "frame-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors {$ancestors}; base-uri 'none'; object-src 'none'");
     if (is_https()) {
         header('Strict-Transport-Security: max-age=31536000');
     }

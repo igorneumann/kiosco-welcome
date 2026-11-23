@@ -34,7 +34,7 @@ El tema **claro** es el predeterminado. El mantenedor (y el administrador) lo ca
 
 ## Kiosco dentro de otras webs
 
-Por defecto el kiosco solo se puede mostrar dentro de un iframe en el propio sitio. En **Integración → Webs de confianza** el administrador añade las webs que pueden incrustarlo (`www.bezares.com`, `*.bezares.com`, con puerto opcional; solo https). Se aplica con la cabecera CSP `frame-ancestors` que envía `kiosk.php`.
+Por defecto el kiosco y el panel solo se pueden mostrar dentro de un iframe en el propio sitio. En **Integración → Webs de confianza** el administrador añade las webs que pueden incrustarlos (`www.bezares.com`, `*.bezares.com`, con puerto opcional; solo https). La casilla *Permitir también el panel* (activada por defecto) extiende el permiso al acceso, la recuperación de contraseña y la administración. Se aplica con la cabecera CSP `frame-ancestors` (kiosco: `kiosk.php`; panel: `security_headers()`); sin webs de confianza, el panel envía `X-Frame-Options: DENY`. El inicio de sesión dentro del iframe funciona en webs del mismo dominio (`cloud.bezares.com`); en dominios ajenos el navegador bloquea la cookie de sesión.
 
 ## Icono
 

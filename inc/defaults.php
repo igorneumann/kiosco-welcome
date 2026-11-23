@@ -42,6 +42,7 @@ return [
 
     // Webs de confianza que pueden mostrar el kiosco dentro de un iframe (una por línea)
     'embed_origins'      => '',
+    'embed_admin'        => true,       // las webs de confianza también pueden mostrar el panel (login y administración)
     // Dominios que se pueden mostrar en las ventanas del kiosco ("*.dominio" = subdominios).
     // El propio kiosco (welcome.bezares.com) nunca se puede incrustar aunque encaje en la lista.
     'frame_domains'      => "bezares.com\n*.bezares.com\nwww.youtube-nocookie.com",
