@@ -18,6 +18,12 @@ declare(strict_types=1);
 
 const STATS_EVENTS = ['start', 'reload', 'open', 'close', 'nl'];
 
+// Límites diarios por dirección (el token del kiosco es público, así que cualquiera podría enviar eventos):
+// un kiosco real arranca pocas veces al día y no llega a miles de aperturas.
+const STATS_MAX_STARTS_DAY = 50;    // arranques + recargas por dirección y día
+const STATS_MAX_EVENTS_DAY = 1500;  // aperturas, cierres y suscripciones por dirección y día
+const STATS_OPEN_MAX_SECS  = 3600;  // un cierre o una suscripción solo cuenta si hay una apertura abierta de ese icono
+
 function stats_dir(): string
 {
     $d = data_path('stats');
@@ -60,6 +66,32 @@ function stats_record(string $event, string $icon = '', float $dur = 0, string $
         if ($rl[0] !== $min) { $rl = [$min, 0]; }
         if (++$rl[1] > 60) { $s['rl'][$ipKey] = $rl; return false; }
         $s['rl'][$ipKey] = $rl;
+
+        // Límites diarios por dirección y coherencia de la secuencia (abrir → cerrar / suscribirse).
+        // Si un evento no encaja con lo que haría un kiosco real, se descarta sin contarlo (pero se responde
+        // como si se hubiera aceptado, para no dar pistas).
+        foreach ($s['ip'] ?? [] as $k => $v) {
+            if (($v['day'] ?? '') !== $day) { unset($s['ip'][$k]); }
+        }
+        $q = $s['ip'][$ipKey] ?? ['day' => $day, 'starts' => 0, 'events' => 0, 'open' => '', 'at' => 0];
+        $now = time();
+        $isStart = $event === 'start' || $event === 'reload';
+        if ($isStart ? $q['starts'] >= STATS_MAX_STARTS_DAY : $q['events'] >= STATS_MAX_EVENTS_DAY) {
+            return true;
+        }
+        $hasOpen = $q['open'] !== '' && $q['open'] === $icon && $now - $q['at'] <= STATS_OPEN_MAX_SECS;
+        if (($event === 'close' || $event === 'nl') && !$hasOpen) {
+            return true;
+        }
+        $isStart ? $q['starts']++ : $q['events']++;
+        if ($event === 'open') {
+            $q['open'] = $icon;
+            $q['at'] = $now;
+        } elseif ($event === 'close') {
+            $dur = min($dur, (float)($now - $q['at'] + 5)); // la duración no puede superar el tiempo real abierto
+            $q['open'] = '';
+        }
+        $s['ip'][$ipKey] = $q;
 
         $d = $s['days'][$day] ?? [];
         switch ($event) {

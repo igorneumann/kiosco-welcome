@@ -8,7 +8,9 @@ define('APP_ROOT', dirname(__DIR__));
 define('UPLOAD_DIR', APP_ROOT . '/uploads');
 define('DUMMY_HASH', '$2y$10$dM7.G7jzmD3TCXk.K/MZj.vqRrrMkGJFteSdPVJh4/aHtiW1d/IYG');
 
-const BUILTIN_ICONS = ['globe', 'mail', 'play', 'video', 'info', 'phone', 'map', 'doc', 'star', 'home', 'link', 'calendar'];
+const MAX_LOGOS = 30; // logos como máximo en la biblioteca del mantenedor (evita llenar el disco)
+
+const BUILTIN_ICONS =['globe', 'mail', 'play', 'video', 'info', 'phone', 'map', 'doc', 'star', 'home', 'link', 'calendar'];
 
 ini_set('display_errors', '0');
 date_default_timezone_set(defined('TIMEZONE') ? TIMEZONE : 'Europe/Madrid');
@@ -840,11 +842,17 @@ function login_success(string $ip, string $acct, bool $trusted): void
 /** Avisa por correo a los administradores de un posible ataque contra una cuenta. */
 function alert_admins(string $acct): void
 {
+    // El nombre viene de lo que se escribió en el formulario: solo se cita si la cuenta existe (y sin saltos
+    // de línea ni caracteres de control), para que nadie pueda colar su propio texto en el correo.
+    $known = user_find($acct);
+    $acctText = $known
+        ? '«' . preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $known['username']) . '»'
+        : 'de un usuario que no existe';
     $sent = 0;
     foreach (users_all() as $u) {
         $to = user_email($u);
         if ($u['role'] === 'admin' && $to !== '') {
-            $body = "Se han producido " . LOGIN_USER_SOFT . " o más intentos fallidos de acceso a la cuenta «{$acct}» "
+            $body = "Se han producido " . LOGIN_USER_SOFT . " o más intentos fallidos de acceso a la cuenta {$acctText} "
                   . "del panel welcome.bezares.com en los últimos " . (LOGIN_WINDOW / 60) . " minutos, desde una o varias IP.\r\n\r\n"
                   . "La cuenta NO se ha bloqueado: los navegadores donde ya se inició sesión siguen entrando con normalidad y "
                   . "el resto solo puede intentarlo una vez cada " . LOGIN_SOFT_DELAY . " segundos.\r\n\r\n"
@@ -853,7 +861,7 @@ function alert_admins(string $acct): void
             $sent += (int)send_mail($to, 'Welcome Bezares · Aviso de seguridad: intentos de acceso fallidos', $body);
         }
     }
-    auth_log('alert_admins:' . $sent, $acct);
+    auth_log('alert_admins:' . $sent, $known ? $known['username'] : $acct);
 }
 
 /* --- Navegador de confianza (cookie firmada tras un login correcto) --- */

@@ -68,9 +68,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'upload_logo':
                 $anchor = 'logos';
+                if (count(config_get()['logos']) >= MAX_LOGOS) {
+                    throw new RuntimeException('La biblioteca ya tiene ' . MAX_LOGOS . ' logos. Borre alguno antes de subir otro.');
+                }
                 $path = handle_upload('logo', 'logo');
                 if (!$path) { throw new RuntimeException('Seleccione una imagen.'); }
                 config_update(function (array &$c) use ($path) {
+                    if (count($c['logos']) >= MAX_LOGOS) { // comprobación final con el archivo bloqueado
+                        delete_upload($path);
+                        throw new RuntimeException('La biblioteca ya tiene ' . MAX_LOGOS . ' logos. Borre alguno antes de subir otro.');
+                    }
                     $c['logos'][] = $path;
                     $c['bottom_logo'] = $path;
                 });
@@ -368,7 +375,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $anchor = 'usuarios';
                 $un = post_str('username', 100);
                 $pw = (string)($_POST['password'] ?? '');
-                if (!user_find($un)) { throw new RuntimeException('Usuario no encontrado.'); }
+                $target = user_find($un); // sin distinguir mayúsculas; a partir de aquí, el nombre real
+                if (!$target) { throw new RuntimeException('Usuario no encontrado.'); }
+                $un = $target['username'];
                 if ($p = password_problem($pw, $un)) { throw new RuntimeException($p); }
                 $hash = password_make($pw);
                 users_update(function (array &$users) use ($un, $hash) {
@@ -383,7 +392,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $anchor = 'usuarios';
                 $un = post_str('username', 100);
                 $em = post_str('email', 100);
-                if (!user_find($un)) { throw new RuntimeException('Usuario no encontrado.'); }
+                $target = user_find($un);
+                if (!$target) { throw new RuntimeException('Usuario no encontrado.'); }
+                $un = $target['username'];
                 if (!email_valid($em)) { throw new RuntimeException('El correo no es válido.'); }
                 users_update(function (array &$users) use ($un, $em) {
                     foreach ($users as &$u) { if ($u['username'] === $un) { $u['email'] = $em; } }
@@ -395,6 +406,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'user_delete':
                 $anchor = 'usuarios';
                 $un = post_str('username', 100);
+                $target = user_find($un);
+                if (!$target) { throw new RuntimeException('Usuario no encontrado.'); }
+                $un = $target['username'];
                 if ($un === $me['username']) { throw new RuntimeException('No puede eliminar su propio usuario.'); }
                 users_update(function (array &$users) use ($un) {
                     $users = array_values(array_filter($users, fn($u) => $u['username'] !== $un));

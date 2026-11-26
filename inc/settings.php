@@ -24,7 +24,9 @@ const MAIL_FROM_NAME = 'Welcome Bezares';
 const RESET_TTL = 1800;        // 30 min
 const RESET_MAX_PER_HOUR = 3;
 
-// Nombre del archivo del modo kiosco (ruta secreta).
+// Nombre del archivo del modo kiosco. No es una protección: figura en el repositorio público y la
+// configuración del kiosco (api/kiosk-config.php) es pública. Solo debe mostrar contenido público.
+// Si lo cambia, cambie también la regla de .htaccess y la URL del equipo del kiosco.
 const KIOSK_FILE = 'VXM7D4mGu83ERwJC.html';
 
 // Carpeta de datos (configuración, usuarios, intentos, sesiones, registros). DEBE quedar fuera de la web.
