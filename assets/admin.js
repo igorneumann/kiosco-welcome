@@ -164,6 +164,88 @@
   // Vista previa del kiosco
   var box = document.getElementById('previewBox');
   var frame = document.getElementById('preview');
+
+  // Vista previa en directo: lo que se escribe en los formularios se ve al momento en la vista previa,
+  // sin guardar. Solo se envían campos conocidos y solo a la vista previa (mismo origen). El kiosco real
+  // no cambia hasta pulsar «Guardar».
+  var LIVE_COMMON = { center_text: 's', center_text2: 's', center_font_mode: 's', center_font_mode2: 's',
+    center_font_size: 'n', center_font_size2: 'n', center_bold: 'b', center_bold2: 'b', center_video: 'b',
+    welcome_texts: 'lines', welcome_interval: 'n', footer_title: 's', footer_strip_height: 'n',
+    bg_pulse_scale: 'n', bg_pulse_duration: 'n' };
+  var LIVE_THEMED = ['page_bg', 'welcome_color', 'welcome_color2', 'text_color', 'line_color', 'footer_title_color',
+    'footer_bg', 'footer_fg', 'footer_strip'];
+  var liveDirty = false;
+
+  function readField(form, name, kind) {
+    var els = form.querySelectorAll('[name="' + name + '"]');
+    if (!els.length) return undefined;
+    var el = els[0];
+    if (el.type === 'radio') {
+      for (var i = 0; i < els.length; i++) if (els[i].checked) return els[i].value;
+      return undefined;
+    }
+    if (el.type === 'checkbox') return el.checked;
+    var v = el.value;
+    if (kind === 'n') { v = parseFloat(String(v).replace(',', '.')); return isFinite(v) ? v : undefined; }
+    if (kind === 'b') return !!v;
+    if (kind === 'lines') {
+      var lines = String(v).split('\n').map(function (s) { return s.trim(); }).filter(Boolean).slice(0, 10);
+      return lines.length ? lines : undefined;
+    }
+    return String(v);
+  }
+
+  function collectLive() {
+    var vals = { common: {}, light: {}, dark: {} }, any = false;
+    document.querySelectorAll('form').forEach(function (f) {
+      Object.keys(LIVE_COMMON).forEach(function (k) {
+        var v = readField(f, k, LIVE_COMMON[k]);
+        if (v !== undefined) { vals.common[k] = v; any = true; }
+      });
+      LIVE_THEMED.forEach(function (k) {
+        var v = readField(f, k, 's');
+        if (v !== undefined) { vals.light[k] = v; any = true; }
+        var d = readField(f, 'dark_' + k, 's');
+        if (d !== undefined) { vals.dark[k] = d; any = true; }
+      });
+      var tile = readField(f, 'dark_logo_tile', 'b');
+      if (tile !== undefined) { vals.dark.logo_tile = tile; any = true; }
+    });
+    return any ? vals : null;
+  }
+
+  function sendLive() {
+    if (!frame || !frame.contentWindow || !liveDirty) return;
+    try { frame.contentWindow.postMessage({ type: 'wk-live', values: collectLive() }, location.origin); } catch (e) {}
+  }
+
+  if (frame) {
+    var liveT = null;
+    var onEdit = function (e) {
+      var t = e.target;
+      if (!t || !t.name || t.type === 'file' || t.type === 'hidden' || !t.form) return;
+      if (!(t.name in LIVE_COMMON) && LIVE_THEMED.indexOf(t.name.replace(/^dark_/, '')) === -1 && t.name !== 'dark_logo_tile') return;
+      if (!liveDirty) {
+        liveDirty = true;
+        if (box) box.classList.add('live-dirty');
+      }
+      clearTimeout(liveT);
+      liveT = setTimeout(sendLive, 120);
+    };
+    document.addEventListener('input', onEdit, true);
+    document.addEventListener('change', onEdit, true);
+    // Si la vista previa se recarga (botón «Recargar» o cambio de código), recibe de nuevo lo escrito
+    window.addEventListener('message', function (e) {
+      if (e.origin === location.origin && e.source === frame.contentWindow && e.data && e.data.type === 'wk-preview-ready') sendLive();
+    });
+    frame.addEventListener('load', sendLive);
+    // Aviso al salir con cambios sin guardar (no al enviar un formulario)
+    var submitting = false;
+    document.addEventListener('submit', function () { submitting = true; }, true);
+    window.addEventListener('beforeunload', function (e) {
+      if (liveDirty && !submitting) { e.preventDefault(); e.returnValue = ''; }
+    });
+  }
   var orient = document.getElementById('orientBtn');
   var reload = document.getElementById('reloadPreview');
   try {

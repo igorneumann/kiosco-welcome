@@ -80,8 +80,40 @@
 
   function cssUrl(p) { return 'url("' + encodeURI(p).replace(/"/g, '%22') + '")'; }
 
-  /* ---------------- Pintar ---------------- */
+  /* ---------------- Vista previa en directo (panel) ---------------- */
+  // En la vista previa del panel (?preview=1), el panel envía los valores que se están escribiendo, sin
+  // guardar, y se pintan encima de la configuración guardada. Solo se aceptan mensajes de la ventana que
+  // contiene la vista previa y del mismo origen. El kiosco real no escucha estos mensajes.
+  var baseCfg = null, liveVals = null;
+  // Claves que el servidor sustituye por las del tema oscuro cuando está activo
+  var THEMED = ['page_bg', 'welcome_color', 'welcome_color2', 'text_color', 'line_color', 'footer_title_color',
+                'footer_bg', 'footer_fg', 'footer_strip'];
+  function withLive(c) {
+    if (!liveVals) return c;
+    var out = {}, k;
+    for (k in c) out[k] = c[k];
+    var common = liveVals.common || {}, themed = (c.theme === 'dark' ? liveVals.dark : liveVals.light) || {};
+    for (k in common) out[k] = common[k];
+    for (k in themed) if (THEMED.indexOf(k) !== -1 || k === 'logo_tile') out[k] = themed[k];
+    return out;
+  }
   function apply(c) {
+    baseCfg = c;
+    render(withLive(c));
+  }
+  if (PREVIEW && window.parent !== window) {
+    window.addEventListener('message', function (e) {
+      if (e.origin !== location.origin || e.source !== window.parent) return;
+      var d = e.data;
+      if (!d || d.type !== 'wk-live') return;
+      liveVals = d.values || null;
+      if (baseCfg) render(withLive(baseCfg));
+    });
+    try { window.parent.postMessage({ type: 'wk-preview-ready' }, location.origin); } catch (err) {}
+  }
+
+  /* ---------------- Pintar ---------------- */
+  function render(c) {
     cfg = c;
     var r = document.documentElement.style;
     r.setProperty('--page-bg', c.page_bg);
@@ -113,7 +145,10 @@
     }
     else { header.hidden = true; }
 
-    startWelcome(c.welcome_texts || [], c.welcome_interval || 3, [c.welcome_color, c.welcome_color2 || c.welcome_color]);
+    // Solo se reinicia la animación si cambian sus datos (en la vista previa se repinta en cada tecla)
+    var wArgs = [c.welcome_texts || [], c.welcome_interval || 3, [c.welcome_color, c.welcome_color2 || c.welcome_color]];
+    var wKey = JSON.stringify(wArgs);
+    if (wKey !== welcomeKey) { welcomeKey = wKey; startWelcome(wArgs[0], wArgs[1], wArgs[2]); }
 
     var t1 = c.center_text || '', t2 = c.center_text2 || '';
     $('#center-text').textContent = t1;
@@ -142,9 +177,16 @@
     logo.onload = fit;
     logo.src = c.logo;
 
-    buildFooter(vid ? icons.filter(function (ic) { return ic !== vid; }) : icons);
+    var fIcons = vid ? icons.filter(function (ic) { return ic !== vid; }) : icons;
+    var fKey = JSON.stringify(fIcons);
+    if (fKey !== footerKey) { footerKey = fKey; buildFooter(fIcons); }
+    else { // mismos iconos: solo se actualizan los manejadores (apuntan al objeto de la config actual)
+      var btns = $('#footer-icons').children;
+      fIcons.forEach(function (ic, i) { if (btns[i]) btns[i].onclick = function (ev) { ev.stopPropagation(); openModal(ic); }; });
+    }
     fit();
   }
+  var welcomeKey = '', footerKey = '';
 
   /* ---------------- Vídeo en el centro ---------------- */
   // Fijo en la pantalla, silenciado y en bucle (los navegadores solo permiten la reproducción automática
@@ -361,7 +403,7 @@
       }
       b.setAttribute('aria-label', ic.label || ic.icon);
       if (ic.icon_image) b.querySelector('img').onload = fit;
-      b.addEventListener('click', function (ev) { ev.stopPropagation(); openModal(ic); });
+      b.onclick = function (ev) { ev.stopPropagation(); openModal(ic); };
       box.appendChild(b);
     });
   }
