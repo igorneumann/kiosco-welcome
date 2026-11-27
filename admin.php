@@ -117,8 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         foreach ($c['logos'] as $l) { delete_upload($l); }
                         $c['logos'] = [];
                     }
-                    $c['bottom_logo']      = '';
-                    $c['theme']            = $d['theme'];
+                    $c['bottom_logo']      = ''; // el tema de la pantalla (claro/oscuro) se conserva
                     foreach (['center_text', 'center_font_mode', 'center_font_size', 'center_bold',
                               'center_text2', 'center_font_mode2', 'center_font_size2', 'center_bold2'] as $k) {
                         $c[$k] = $d[$k];
@@ -126,8 +125,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
                 auth_log($deleteLogos ? 'reset_content_delete_logos' : 'reset_content', $me['username']);
                 flash($deleteLogos
-                    ? 'Configuración restablecida: sin textos centrales, tema claro, logo de Bezares y logos subidos eliminados.'
-                    : 'Configuración restablecida: sin textos centrales, tema claro y logo de Bezares. Los logos subidos se conservan.');
+                    ? 'Configuración restablecida: sin textos centrales, logo de Bezares y logos subidos eliminados. El tema de la pantalla no cambia.'
+                    : 'Configuración restablecida: sin textos centrales y logo de Bezares. Los logos subidos y el tema de la pantalla se conservan.');
                 break;
 
             case 'change_own_password':
@@ -664,7 +663,7 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
 <?php if ($sec('reset')): ?>
 <section class="card warn">
   <h2>Restablecer configuración por defecto</h2>
-  <p>Quita los dos textos centrales, vuelve al tema claro y al logo de Bezares.</p>
+  <p>Quita los dos textos centrales y vuelve al logo de Bezares. El tema de la pantalla (claro u oscuro) no cambia.</p>
   <div class="row">
     <form method="post" class="inline" data-confirm="¿Restablecer? Se borrarán los textos centrales; los logos subidos se conservan.">
       <?= csrf_field() ?><input type="hidden" name="action" value="reset_content"><input type="hidden" name="mode" value="keep">

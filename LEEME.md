@@ -24,13 +24,13 @@ La URL del kiosco la sirve `kiosk.php` (regla de `.htaccess`) para enviar una CS
 
 ## Roles
 
-**Mantenedor**: dos textos centrales, uno debajo del otro (varias líneas cada uno), cada uno con su tamaño manual o botón **AUTO** (ajusta la fuente al ancho; si juntos no caben en el alto, se reducen en proporción) y opción de **negrita**, biblioteca de logos inferiores (subir, elegir, borrar), **Restablecer** en dos variantes: *conservar logos* (sin textos centrales, tema claro, logo de Bezares; la biblioteca de logos se mantiene) o *borrar logos* (además elimina los logos subidos), su contraseña.
+**Mantenedor**: dos textos centrales, uno debajo del otro (varias líneas cada uno), cada uno con su tamaño manual o botón **AUTO** (ajusta la fuente al ancho; si juntos no caben en el alto, se reducen en proporción) y opción de **negrita**, biblioteca de logos inferiores (subir, elegir, borrar), **Restablecer** en dos variantes: *conservar logos* (sin textos centrales, logo de Bezares; la biblioteca de logos se mantiene) o *borrar logos* (además elimina los logos subidos); ninguna de las dos cambia el tema de la pantalla. Su contraseña.
 
 **Administrador**: todo lo anterior, más imagen de encabezado, imagen de fondo, logo por defecto, textos de bienvenida (uno por línea, se alternan), colores (rodapié, líneas, textos, fondo), intensidad y velocidad del latido del fondo, iconos del rodapié (añadir hasta 8, quitar, ordenar, icono integrado o imagen propia, URL / código iframe / YouTube, ventana emergente o página completa, ancho, alto, texto, color, posición y tamaño del botón de cierre), usuarios y restablecimiento total.
 
 ## Tema claro / oscuro
 
-El tema **claro** es el predeterminado. El mantenedor (y el administrador) lo cambia con el selector deslizante **Tema de la pantalla**, arriba del panel; el kiosco lo aplica en menos de un minuto. El tema oscuro usa versiones oscuras del encabezado, del fondo y de los tres iconos (incluidas en `assets/defaults/*-dark.svg`) y muestra el logo inferior sobre una placa blanca, como pide el manual de marca. El administrador define sus imágenes y colores en la sección **Tema oscuro**, y cada icono del rodapié admite una imagen opcional para el tema oscuro. *Restablecer por defecto* vuelve al tema claro.
+El tema **claro** es el predeterminado. El mantenedor (y el administrador) lo cambia con el selector deslizante **Tema de la pantalla**, arriba del panel; el kiosco lo aplica en menos de un minuto. El tema oscuro usa versiones oscuras del encabezado, del fondo y de los tres iconos (incluidas en `assets/defaults/*-dark.svg`) y muestra el logo inferior sobre una placa blanca, como pide el manual de marca. El administrador define sus imágenes y colores en la sección **Tema oscuro**, y cada icono del rodapié admite una imagen opcional para el tema oscuro. Los botones *Restablecer* del mantenedor no cambian el tema; *Restablecer todo de fábrica* (administrador) sí vuelve al tema claro.
 
 ## Kiosco dentro de otras webs
 
