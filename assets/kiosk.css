@@ -251,6 +251,8 @@ img { -webkit-user-drag: none; }
   animation: fadeIn .25s ease;
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+/* Ventana precargada y oculta: sigue cargada y con su tamaño real, pero invisible y sin recibir toques */
+.overlay.parked, .overlay.parked * { visibility: hidden !important; pointer-events: none !important; animation: none !important; }
 
 .overlay .box {
   position: relative;

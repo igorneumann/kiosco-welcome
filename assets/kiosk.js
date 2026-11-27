@@ -52,14 +52,15 @@
   // cada recarga posterior a la primera carga cuenta como un envío, salvo la recarga automática del modo
   // kiosco, que llega N segundos después del mensaje mostrado tras un envío (ajuste «segundos del mensaje»
   // en Apariencia, el mismo valor que en Bezares Mailing; por defecto 5).
-  var mail = null; // { win, icon, isMailing, loads, lastLoad, afterSubmit }
+  var mail = null; // { entry (ventana precargada), icon, loads, lastLoad, afterSubmit }
   window.addEventListener('message', function (e) {
-    if (mail && e.source === mail.win && e.data && typeof e.data.bezaresMailingHeight === 'number') mail.isMailing = true;
+    if (!e.data || typeof e.data.bezaresMailingHeight !== 'number') return;
+    Object.keys(frames).forEach(function (k) { if (frames[k].fr.contentWindow === e.source) frames[k].isMailing = true; });
   });
   function mailFrameLoaded() {
     if (!mail) return;
     var now = Date.now(), k = (cfg && cfg.mailing_kiosk_secs) || 5;
-    if (mail.loads > 0 && mail.isMailing) {
+    if (mail.loads > 0 && mail.entry.isMailing) {
       var dt = (now - mail.lastLoad) / 1000;
       var autoRefresh = mail.afterSubmit && dt >= k - 1.5 && dt <= k + 3;
       if (!autoRefresh) track('nl', { i: mail.icon }); // recarga provocada por un envío del formulario
@@ -184,6 +185,7 @@
       var btns = $('#footer-icons').children;
       fIcons.forEach(function (ic, i) { if (btns[i]) btns[i].onclick = function (ev) { ev.stopPropagation(); openModal(ic); }; });
     }
+    syncFrames(fIcons);
     fit();
   }
   var welcomeKey = '', footerKey = '';
@@ -425,12 +427,80 @@
     } catch (e) { return false; }
   }
 
+  /* Páginas web precargadas: cada botón de página web tiene su ventana ya cargada (oculta) desde que
+     arranca el kiosco, así al tocarlo se muestra al instante la copia que ya está en memoria en vez de
+     descargar la página cada vez. Al cerrar se oculta; solo se vuelve a cargar si la persona la ha tocado
+     o ha navegado dentro (para que la siguiente la encuentre como nueva), y cada pocas horas para no
+     enseñar una copia antigua. Los vídeos no se precargan (sonarían ocultos); el subido ya va desde la caché. */
+  var REFRESH_MS = 6 * 3600 * 1000;
+  var frames = {}, current = null; // clave → { ic, ov, fr, loaded, loadedAt, isMailing, touched, navigated, stale }
+  function frameKey(ic) {
+    return JSON.stringify([ic.id, ic.url, !!ic.allow_same_origin, ic.display, ic.width, ic.height, ic.label,
+      ic.close_text, ic.close_bg, ic.close_fg, ic.close_position, ic.close_size]);
+  }
+  function frameEntry(ic) {
+    var k = frameKey(ic), e = frames[k];
+    if (e) { e.ic = ic; return e; }
+    var built = buildOverlay(ic);
+    e = { key: k, ic: ic, ov: built.ov, fr: built.fr, loaded: false, loadedAt: 0, isMailing: false, touched: false, navigated: false, stale: false };
+    e.fr.addEventListener('load', function () {
+      e.loaded = true; e.loadedAt = Date.now();
+      if (mail && mail.entry === e) { mailFrameLoaded(); if (mail.loads > 1) e.navigated = true; }
+    });
+    e.ov.classList.add('parked');
+    document.body.appendChild(e.ov);
+    frames[k] = e;
+    return e;
+  }
+  function reloadFrame(e) {
+    e.loaded = false; e.touched = false; e.navigated = false;
+    e.fr.src = e.ic.url; // volver a asignar la dirección recarga la página desde el principio
+  }
+  function dropFrame(e) { e.ov.remove(); delete frames[e.key]; }
+  // Crea las ventanas de los botones actuales y quita las que ya no se usan
+  function syncFrames(icons) {
+    var want = {};
+    icons.forEach(function (ic) {
+      if (ic.type !== 'url' || ic.blocked || !frameUrlOk(ic.url)) return;
+      want[frameKey(ic)] = true;
+      if (!PREVIEW) frameEntry(ic); // la vista previa del panel no precarga webs
+    });
+    Object.keys(frames).forEach(function (k) {
+      if (want[k]) return;
+      if (frames[k] === current) frames[k].stale = true; else dropFrame(frames[k]);
+    });
+  }
+  function refreshFrames() {
+    var now = Date.now();
+    Object.keys(frames).forEach(function (k) {
+      var e = frames[k];
+      if (e !== current && e.loadedAt && now - e.loadedAt > REFRESH_MS) reloadFrame(e);
+    });
+  }
+
   function openModal(ic) {
     closeModal();
     if (ic.blocked || (ic.type === 'url' && !frameUrlOk(ic.url)) || (ic.type === 'video' && !ic.video)) return;
     track('open', { i: ic.id });
     openedAt = Date.now();
     openedIcon = ic.id;
+    if (ic.type === 'url') {
+      var e = frameEntry(ic);
+      e.touched = false; e.navigated = false;
+      e.ov.classList.remove('parked');
+      current = e;
+      modal = e.ov;
+      // Si la página ya estaba cargada, esa carga cuenta como la primera (las siguientes son envíos)
+      mail = { entry: e, icon: ic.id, loads: e.loaded ? 1 : 0, lastLoad: Date.now(), afterSubmit: false };
+    } else {
+      var built = buildOverlay(ic);
+      document.body.appendChild(built.ov);
+      modal = built.ov;
+    }
+    bumpIdle();
+  }
+
+  function buildOverlay(ic) {
     var full = ic.display === 'fullscreen';
     var ov = document.createElement('div');
     ov.className = 'overlay ' + (full ? 'full' : 'popup');
@@ -498,13 +568,7 @@
       ov.addEventListener('click', function (e) { if (e.target === ov) closeModal('backdrop'); });
     }
     ov.addEventListener('pointerdown', bumpIdle);
-    document.body.appendChild(ov);
-    modal = ov;
-    if (ic.type === 'url') { // solo las páginas web (p. ej. el formulario de Bezares Mailing)
-      mail = { win: fr.contentWindow, icon: ic.id, isMailing: false, loads: 0, lastLoad: 0, afterSubmit: false };
-      fr.addEventListener('load', mailFrameLoaded);
-    }
-    bumpIdle();
+    return { ov: ov, fr: fr };
   }
 
   var openedAt = 0, openedIcon = '';
@@ -515,6 +579,15 @@
       openedIcon = '';
     }
     mail = null;
+    if (current) {
+      // Página precargada: se oculta y se queda en memoria para la próxima vez
+      var e = current; current = null;
+      e.ov.classList.add('parked');
+      try { window.focus(); } catch (err) {}
+      if (e.stale) dropFrame(e);
+      else if (e.touched || e.navigated) reloadFrame(e);
+      modal = null;
+    }
     if (modal) { modal.remove(); modal = null; }
     if (reloadPending) { reloadPending = false; hardReload(true); return; } // actualización esperando a que se cerrara
     if (pending) { var p = pending; pending = null; apply(p); }
@@ -527,7 +600,10 @@
     }
   }
   // Al tocar dentro del iframe la ventana pierde el foco: lo contamos como actividad
-  window.addEventListener('blur', bumpIdle);
+  window.addEventListener('blur', function () {
+    if (current && document.activeElement === current.fr) current.touched = true; // se ha usado la página
+    bumpIdle();
+  });
 
   /* ---------------- 3 clics en el fondo = recarga sin caché ---------------- */
   // Cuenta los clics en cualquier zona de fondo de la página o del rodapié (no en los iconos
@@ -596,6 +672,7 @@
   start();
 
   setInterval(function () {
+    refreshFrames();
     load().then(function (c) {
       if (checkBuild(c)) { saveLocal(c); return; }
       if (!cfg || c.version !== cfg.version) {
