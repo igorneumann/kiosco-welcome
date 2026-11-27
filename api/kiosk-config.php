@@ -49,8 +49,15 @@ foreach ($c['icons'] as $ic) {
     ];
 }
 
+// Huella del código del kiosco: si cambia (actualización en el servidor), la pantalla se recarga sola.
+$build = '';
+foreach (['assets/kiosk.js', 'assets/kiosk.css', 'assets/icons.js', KIOSK_FILE] as $f) {
+    $build .= $f . ':' . (int)@filemtime(APP_ROOT . '/' . $f) . ':' . (int)@filesize(APP_ROOT . '/' . $f) . ';';
+}
+
 echo json_encode([
     'version'           => $c['version'],
+    'build'             => substr(hash('sha256', $build), 0, 12),
     'theme'             => $dark ? 'dark' : 'light',
     'track'             => stats_token(),
     'logo_tile'         => $dark && !empty($c['dark']['logo_tile']),

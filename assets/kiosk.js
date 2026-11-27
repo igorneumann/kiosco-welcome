@@ -15,6 +15,25 @@
   // Eventos agregados (sin datos personales) para la página de estadísticas del panel.
   // La vista previa del panel (?preview=1) no cuenta.
   var PREVIEW = /[?&]preview=1/.test(location.search);
+
+  /* ---------------- Diagnóstico (abrir el kiosco con ?diag=1) ---------------- */
+  // Muestra en pantalla qué pasa con el vídeo (caché, descarga, errores de reproducción) para poder
+  // averiguar por qué no se ve en un dispositivo concreto. Sin ?diag=1 no hace nada.
+  var DIAG = /[?&]diag=1/.test(location.search), diagBox = null, diagLines = [];
+  function diag(msg) {
+    if (!DIAG) return;
+    var t = new Date().toTimeString().slice(0, 8);
+    diagLines.push(t + '  ' + msg);
+    if (diagLines.length > 14) diagLines.shift();
+    if (!diagBox) {
+      diagBox = document.createElement('pre');
+      diagBox.style.cssText = 'position:fixed;left:8px;right:8px;top:8px;z-index:999;margin:0;padding:8px;'
+        + 'background:rgba(0,0,0,.8);color:#7fff7f;font:12px/1.35 monospace;white-space:pre-wrap;pointer-events:none';
+      document.body.appendChild(diagBox);
+    }
+    diagBox.textContent = navigator.userAgent + '\nCache Storage: ' + (window.caches ? 'sí' : 'NO')
+      + ' · contexto seguro: ' + (window.isSecureContext ? 'sí' : 'NO') + '\n\n' + diagLines.join('\n');
+  }
   var started = false;
   function track(e, extra) {
     if (PREVIEW || !cfg || !cfg.track) return;
@@ -146,10 +165,29 @@
       v.setAttribute('muted', ''); v.setAttribute('playsinline', ''); v.setAttribute('disablepictureinpicture', '');
       v.setAttribute('tabindex', '-1');
       box.appendChild(v);
+      var tryPlay = function () {
+        if (centerVid !== key || !v.src || !v.paused) return;
+        var p = v.play();
+        if (p && p.catch) p.catch(function (err) { diag('play() rechazado: ' + (err && err.name)); });
+      };
+      // Si la copia local falla al decodificarse, se reproduce directamente del servidor
+      v.addEventListener('error', function () {
+        var code = v.error ? v.error.code : '?';
+        diag('error de vídeo (código ' + code + ') con ' + (v.src.indexOf('blob:') === 0 ? 'copia local' : 'servidor'));
+        if (v.src.indexOf('blob:') === 0) { v.src = ic.video; tryPlay(); }
+      });
+      ['loadedmetadata', 'canplay', 'playing', 'pause', 'stalled', 'waiting'].forEach(function (ev) {
+        v.addEventListener(ev, function () { diag(ev + ' · ' + (v.src.indexOf('blob:') === 0 ? 'local' : 'servidor')); if (ev === 'canplay') tryPlay(); });
+      });
+      // Algunos navegadores de kiosco (WebView) no permiten el arranque automático: se reintenta en
+      // cualquier toque y al volver a la pantalla.
+      document.addEventListener('pointerdown', tryPlay, true);
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) tryPlay(); });
       cachedMedia(ic.video).then(function (src) {
         if (centerVid !== key) return; // cambió mientras se descargaba
+        diag('fuente: ' + (src.indexOf('blob:') === 0 ? 'caché local' : 'servidor (sin caché)'));
         v.src = src;
-        var p = v.play(); if (p && p.catch) p.catch(function () {});
+        tryPlay();
       });
       return;
     }
@@ -183,15 +221,21 @@
     if (!canCache) return Promise.resolve(path);
     var p = caches.open(MEDIA_CACHE).then(function (cache) {
       return cache.match(path).then(function (hit) {
-        if (hit) return hit;
+        if (hit) { diag('vídeo en caché local: ' + path); return hit; }
+        diag('descargando vídeo (1.ª vez): ' + path);
         return fetch(path, { credentials: 'omit' }).then(function (res) {
           if (!res.ok) throw new Error('HTTP ' + res.status);
-          return cache.put(path, res.clone()).then(function () { return res; }, function () { return res; });
+          return cache.put(path, res.clone()).then(function () { diag('vídeo guardado en caché'); return res; },
+            function (err) { diag('no se pudo guardar en caché: ' + (err && err.name)); return res; });
         });
       });
     }).then(function (res) { return res.blob(); })
-      .then(function (blob) { var u = URL.createObjectURL(blob); mediaBlob[path] = u; return u; })
-      .catch(function () { delete mediaReq[path]; return path; }); // sin caché: directamente del servidor
+      .then(function (blob) {
+        diag('copia local lista: ' + (blob.size / 1048576).toFixed(1) + ' MB, tipo ' + (blob.type || '?'));
+        if (!blob.type) blob = new Blob([blob], { type: /\.webm$/i.test(path) ? 'video/webm' : 'video/mp4' }); // algunos Android lo necesitan
+        var u = URL.createObjectURL(blob); mediaBlob[path] = u; return u;
+      })
+      .catch(function (err) { diag('caché no disponible (' + (err && (err.name || err.message)) + '): del servidor'); delete mediaReq[path]; return path; });
     mediaReq[path] = p;
     return p;
   }
@@ -366,6 +410,9 @@
         var p = fr.play(); if (p && p.catch) p.catch(function () {});
       });
       fr.addEventListener('play', bumpIdle);
+      fr.addEventListener('error', function () { // copia local dañada: directamente del servidor
+        if (fr.src.indexOf('blob:') === 0) { fr.src = ic.video; var q = fr.play(); if (q && q.catch) q.catch(function () {}); }
+      });
     } else if (ic.type === 'youtube') {
       fr.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
       box.classList.add('video');
@@ -427,6 +474,7 @@
     }
     mail = null;
     if (modal) { modal.remove(); modal = null; }
+    if (reloadPending) { reloadPending = false; hardReload(true); return; } // actualización esperando a que se cerrara
     if (pending) { var p = pending; pending = null; apply(p); }
   }
 
@@ -452,13 +500,17 @@
     if (clicks.length >= 3) { clicks = []; hardReload(); }
   });
 
-  function hardReload() {
-    track('reload', {});
+  function hardReload(auto) {
+    if (!auto) track('reload', {}); // las recargas automáticas por actualización no cuentan como recargas manuales
     $('#reloading').hidden = false;
     var tasks = [];
     try { localStorage.removeItem(CACHE_KEY); } catch (e) {}
     if (window.caches && caches.keys) {
-      tasks.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+      // Se vacían las cachés salvo la de vídeos: el vídeo no cambia (nombre único) y descargarlo de nuevo gasta datos.
+      // Si el vídeo cambia, pruneMedia() borra el antiguo.
+      tasks.push(caches.keys().then(function (ks) {
+        return Promise.all(ks.filter(function (k) { return k !== MEDIA_CACHE; }).map(function (k) { return caches.delete(k); }));
+      }));
     }
     ['assets/kiosk.css', 'assets/kiosk.js', 'assets/icons.js', location.pathname].forEach(function (u) {
       tasks.push(fetch(u, { cache: 'reload' }).catch(function () {}));
@@ -479,8 +531,20 @@
   window.addEventListener('resize', function () { clearTimeout(resizeT); resizeT = setTimeout(fit, 150); });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
 
+  // Código nuevo en el servidor: la huella «build» cambia y la pantalla se recarga sola (si hay una
+  // ventana abierta, al cerrarla). Así un kiosco que lleva días encendido no se queda con el código viejo.
+  var BUILD = null, reloadPending = false;
+  function checkBuild(c) {
+    if (!c || !c.build) return false;
+    if (BUILD === null) { BUILD = c.build; diag('código del kiosco: ' + c.build); return false; }
+    if (c.build === BUILD) return false;
+    if (modal) { reloadPending = true; return true; }
+    hardReload(true);
+    return true;
+  }
+
   function start() {
-    load().then(function (c) { saveLocal(c); apply(c); if (!started) { started = true; track('start', {}); } })
+    load().then(function (c) { saveLocal(c); checkBuild(c); apply(c); if (!started) { started = true; track('start', {}); } })
       .catch(function () {
         var local = readLocal();
         if (local && !cfg) apply(local);
@@ -491,6 +555,7 @@
 
   setInterval(function () {
     load().then(function (c) {
+      if (checkBuild(c)) { saveLocal(c); return; }
       if (!cfg || c.version !== cfg.version) {
         saveLocal(c);
         if (modal) pending = c; else apply(c);
