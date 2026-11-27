@@ -1138,5 +1138,6 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
   </main>
 </div>
 <?php endif; ?>
+<div class="app-version" title="Versión del programa">v<?= e(APP_VERSION) ?></div>
 </body>
 </html>

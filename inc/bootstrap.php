@@ -5,6 +5,8 @@ require __DIR__ . '/settings.php';
 require_once __DIR__ . '/stats.php';
 
 define('APP_ROOT', dirname(__DIR__));
+// Versión del programa: inc/VERSION (sube 0.1 en cada commit; ver el hook pre-commit).
+define('APP_VERSION', trim((string)@file_get_contents(__DIR__ . '/VERSION')) ?: '1.0');
 define('UPLOAD_DIR', APP_ROOT . '/uploads');
 define('DUMMY_HASH', '$2y$10$dM7.G7jzmD3TCXk.K/MZj.vqRrrMkGJFteSdPVJh4/aHtiW1d/IYG');
 
