@@ -14,7 +14,7 @@ Sustituye a la instalación de WordPress. PHP 8.0 o superior (recomendado 8.1+),
 2. Haga copia de seguridad de la carpeta actual de WordPress de welcome.bezares.com (cPanel → *Administrador de archivos* → comprimir) y vacíela, o cree una carpeta nueva y apunte el subdominio a ella en *Dominios*.
 3. Suba `welcome-kiosco.zip` a esa carpeta y use *Extraer*. Compruebe que se ven los archivos ocultos (`.htaccess`) en *Configuración → Mostrar archivos ocultos*.
 4. Permisos: carpeta `uploads/` → 755; archivos → 644. Los datos (usuarios, contraseñas, registros, sesiones) se guardan **fuera de la web**, en `/home/USUARIO/welcome-kiosk-data` (se crea sola con permisos 700). Si su hosting no lo permite, fije la ruta en `DATA_DIR`.
-5. *MultiPHP Manager*: PHP 8.1 o superior. *MultiPHP INI Editor*: `upload_max_filesize = 8M`, `post_max_size = 10M`. Extensión `fileinfo` activada (*Select PHP Version → Extensions*).
+5. *MultiPHP Manager*: PHP 8.1 o superior. *MultiPHP INI Editor*: `upload_max_filesize = 100M`, `post_max_size = 105M` (para poder subir vídeos; las imágenes siguen limitadas a 8 MB). Extensión `fileinfo` activada (*Select PHP Version → Extensions*).
 6. Abra `https://welcome.bezares.com/`, introduzca la clave de instalación y cree el usuario **administrador** y el **mantenedor**. A partir de ahí el formulario de instalación desaparece.
 7. En el equipo del kiosco, abra `https://welcome.bezares.com/VXM7D4mGu83ERwJC.html` en modo pantalla completa / kiosco del navegador.
 
@@ -60,6 +60,8 @@ La respuesta es siempre la misma (no revela si el usuario existe), hay límite d
 - Welcome! ↔ Bienvenidos! animado, en bucle.
 - Fondo con latido doble tipo corazón; logo inferior con "jiggle" cada 5 s.
 - Líneas decorativas con punto central que se estiran para ocupar siempre el 100 % del alto.
+- **Sin textos centrales** (y con la opción «Sin textos, reproducir el vídeo en el centro» activada, que es lo predeterminado), el primer icono de vídeo (YouTube o subido) se reproduce en el centro, en lugar de la línea decorativa, entre «Welcome» y el logo: fijo (sin ventana, sin botón de cerrar y sin reaccionar a los toques), sin sonido (los navegadores no permiten reproducir con sonido sin un toque) y en bucle. Su icono sale del rodapié, que queda con los demás (p. ej. suscribirse y página web). En cuanto se escribe un texto central, o si se desactiva esa opción en *Textos centrales*, vuelven la línea y el icono.
+- **Vídeo subido**: en un icono, *Contenido → Vídeo subido (MP4 / WebM)* permite usar un archivo propio en lugar de YouTube (máx. 100 MB, o lo que permita el PHP del hosting). El kiosco lo descarga **una sola vez** y lo guarda en la caché del navegador (Cache Storage): después se reproduce sin volver a consumir datos, también tras recargar o sin conexión. Al subir otro vídeo se descarga el nuevo y el anterior se borra del servidor y de la caché. Para mínimo consumo, use MP4 H.264 a 720p o 1080p con una tasa de bits moderada.
 - Los cambios hechos en el panel aparecen solos en el kiosco en ≤ 1 minuto (sin interrumpir una ventana abierta).
 - **3 clics en el fondo en menos de 2 s** (cualquier zona libre de la página o del rodapié, no sobre los iconos) → recarga invalidando la caché.
 - Si se cae la red, sigue mostrando la última configuración recibida.

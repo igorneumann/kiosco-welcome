@@ -90,6 +90,7 @@ return [
     'center_font_mode2'  => 'auto',
     'center_font_size2'  => 4,
     'center_bold2'       => false,
+    'center_video'       => true,       // sin textos centrales: reproducir el vídeo en el centro (en lugar de la línea)
     'bottom_logo'        => '',         // '' = logo por defecto
     'logos'              => [],         // biblioteca de logos subidos por el mantenedor
 ];

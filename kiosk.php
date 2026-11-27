@@ -31,6 +31,6 @@ header('X-Content-Type-Options: nosniff');
 header('X-Robots-Tag: noindex, nofollow, noarchive');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
-header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; "
      . "connect-src 'self'; frame-src {$frameSrc}; frame-ancestors {$ancestors}; base-uri 'none'; form-action 'none'; object-src 'none'");
 readfile(__DIR__ . '/' . KIOSK_FILE);

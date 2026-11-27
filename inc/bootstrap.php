@@ -9,6 +9,7 @@ define('UPLOAD_DIR', APP_ROOT . '/uploads');
 define('DUMMY_HASH', '$2y$10$dM7.G7jzmD3TCXk.K/MZj.vqRrrMkGJFteSdPVJh4/aHtiW1d/IYG');
 
 const MAX_LOGOS = 30; // logos como máximo en la biblioteca del mantenedor (evita llenar el disco)
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // vídeos subidos (MP4/WebM); el límite real puede ser menor (PHP)
 
 const BUILTIN_ICONS =['globe', 'mail', 'play', 'video', 'info', 'phone', 'map', 'doc', 'star', 'home', 'link', 'calendar'];
 
@@ -1251,10 +1252,80 @@ function svg_sanitize(string $xml): string
     return '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . $out;
 }
 
+/** Bytes de un valor de php.ini como "8M" o "1G". */
+function ini_bytes(string $v): int
+{
+    $v = trim($v);
+    $n = (int)$v;
+    switch (strtolower(substr($v, -1))) {
+        case 'g': $n *= 1024;
+        // no break
+        case 'm': $n *= 1024;
+        // no break
+        case 'k': $n *= 1024;
+    }
+    return $n;
+}
+
+/** Tamaño máximo real de un vídeo: el de la app, limitado por upload_max_filesize y post_max_size. */
+function video_max_bytes(): int
+{
+    $lim = [MAX_VIDEO_BYTES];
+    foreach (['upload_max_filesize', 'post_max_size'] as $k) {
+        $b = ini_bytes((string)ini_get($k));
+        if ($b > 0) { $lim[] = $b; }
+    }
+    return min($lim);
+}
+
+/**
+ * Sube un vídeo MP4 o WebM. No se puede volver a codificar (no hay conversor en el hosting), así que se
+ * comprueba la firma del archivo y se guarda con nombre propio; se sirve como vídeo, sin ejecutar nada y
+ * con la CSP "sandbox" de /uploads. Devuelve 'uploads/...' o null si no se envió archivo.
+ */
+function handle_video_upload(string $field, string $prefix): ?string
+{
+    if (empty($_FILES[$field]) || ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+    $f = $_FILES[$field];
+    if (is_array($f['error'])) {
+        throw new RuntimeException('Envío de archivo no válido.');
+    }
+    $max = video_max_bytes();
+    if ($f['error'] === UPLOAD_ERR_INI_SIZE || $f['error'] === UPLOAD_ERR_FORM_SIZE || $f['size'] > $max) {
+        throw new RuntimeException('El vídeo supera el tamaño máximo (' . round($max / 1048576) . ' MB).');
+    }
+    if ($f['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) {
+        throw new RuntimeException('No se pudo subir el vídeo.');
+    }
+    $head = (string)@file_get_contents($f['tmp_name'], false, null, 0, 16);
+    if (strlen($head) >= 12 && substr($head, 4, 4) === 'ftyp') {
+        $ext = 'mp4';
+    } elseif (strncmp($head, "\x1A\x45\xDF\xA3", 4) === 0) {
+        $ext = 'webm';
+    } else {
+        throw new RuntimeException('Formato de vídeo no admitido. Use MP4 (H.264) o WebM.');
+    }
+    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($f['tmp_name']);
+    if (!in_array($mime, ['video/mp4', 'video/webm', 'video/x-matroska', 'video/quicktime', 'application/octet-stream'], true)) {
+        throw new RuntimeException('El archivo no parece un vídeo MP4 o WebM.');
+    }
+    if (!is_dir(UPLOAD_DIR)) {
+        @mkdir(UPLOAD_DIR, 0755, true);
+    }
+    $name = $prefix . '-' . bin2hex(random_bytes(8)) . '.' . $ext;
+    if (!@move_uploaded_file($f['tmp_name'], UPLOAD_DIR . '/' . $name)) {
+        throw new RuntimeException('No se pudo guardar el vídeo. Revise los permisos de /uploads.');
+    }
+    @chmod(UPLOAD_DIR . '/' . $name, 0644);
+    return 'uploads/' . $name;
+}
+
 /** Borra un archivo subido (solo dentro de /uploads y con nombre generado por la app). */
 function delete_upload(?string $path): void
 {
-    if (!$path || !preg_match('#^uploads/([a-z]+-[a-f0-9]{16}\.(png|jpg|gif|webp|svg))$#', $path, $m)) {
+    if (!$path || !preg_match('#^uploads/([a-z]+-[a-f0-9]{16}\.(png|jpg|gif|webp|svg|mp4|webm))$#', $path, $m)) {
         return;
     }
     $full = UPLOAD_DIR . '/' . $m[1];

@@ -22,9 +22,11 @@ if ($dark) {
 
 $icons = [];
 foreach ($c['icons'] as $ic) {
-    $isYt = $ic['type'] === 'youtube';
+    $type = in_array($ic['type'], ['youtube', 'video'], true) ? $ic['type'] : 'url';
+    $video = $type === 'video' && preg_match('#^uploads/[a-z]+-[a-f0-9]{16}\.(mp4|webm)$#', (string)($ic['video'] ?? ''))
+        ? (string)$ic['video'] : '';
     // Comprobación también al servir: una URL guardada antes de cambiar la lista deja de abrirse.
-    $blocked = !$isYt && frame_url_problem((string)$ic['url'], $domains) !== null;
+    $blocked = $type === 'url' ? frame_url_problem((string)$ic['url'], $domains) !== null : ($type === 'video' && $video === '');
     $icons[] = [
         'id'             => (string)$ic['id'],
         'blocked'        => $blocked,
@@ -32,7 +34,8 @@ foreach ($c['icons'] as $ic) {
         'label'          => (string)$ic['label'],
         'icon'           => in_array($ic['icon'], BUILTIN_ICONS, true) ? $ic['icon'] : 'info',
         'icon_image'     => icon_image_for_theme($ic, $dark),
-        'type'           => $ic['type'] === 'youtube' ? 'youtube' : 'url',
+        'type'           => $type,
+        'video'          => $video,
         'url'            => $blocked ? '' : (string)$ic['url'],
         'youtube_id'     => (string)$ic['youtube_id'],
         'display'        => $ic['display'] === 'fullscreen' ? 'fullscreen' : 'popup',
@@ -79,6 +82,7 @@ echo json_encode([
     'center_font_mode2' => $c['center_font_mode2'],
     'center_font_size2' => (float)$c['center_font_size2'],
     'center_bold2'      => (bool)$c['center_bold2'],
+    'center_video'      => !empty($c['center_video']),
     'logo'              => $c['bottom_logo'] ?: $c['default_logo'],
     'icons'             => $icons,
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

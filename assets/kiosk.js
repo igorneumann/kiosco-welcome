@@ -105,12 +105,110 @@
     $('#center').hidden = !has;
     $('#deco2').hidden = !has;
 
+    // Sin textos centrales: el primer icono de vídeo (YouTube) se reproduce en el centro, en lugar de la
+    // línea decorativa, y su icono sale del rodapié.
+    // Se puede desactivar en el panel (center_video = false): entonces se queda la línea y el icono.
+    var icons = c.icons || [], vid = null;
+    if (!has && c.center_video !== false) {
+      for (var i = 0; i < icons.length; i++) {
+        var x = icons[i];
+        if (!x.blocked && ((x.type === 'youtube' && x.youtube_id) || (x.type === 'video' && x.video))) { vid = x; break; }
+      }
+    }
+    $('#deco1').hidden = !!vid;
+    centerVideo(vid);
+    pruneMedia(icons);
+
     var logo = $('#logo img');
     logo.onload = fit;
     logo.src = c.logo;
 
-    buildFooter(c.icons || []);
+    buildFooter(vid ? icons.filter(function (ic) { return ic !== vid; }) : icons);
     fit();
+  }
+
+  /* ---------------- Vídeo en el centro ---------------- */
+  // Fijo en la pantalla, silenciado y en bucle (los navegadores solo permiten la reproducción automática
+  // sin sonido). No se abre ninguna ventana al tocarlo: los toques pasan al fondo, como en la línea.
+  var centerVid = '';
+  function centerVideo(ic) {
+    var wrap = $('#cvideo'), box = wrap.querySelector('.vbox');
+    var key = !ic ? '' : ic.type === 'video' ? 'v|' + ic.video : 'y|' + ic.youtube_id + '|' + (ic.allow_same_origin ? 1 : 0);
+    wrap.hidden = !ic;
+    if (key === centerVid) return; // mismo vídeo: no se reinicia al recibir otra configuración
+    centerVid = key;
+    box.textContent = '';
+    if (!ic) return;
+    if (ic.type === 'video') {
+      // Vídeo subido: se reproduce desde la caché del navegador (se descarga una sola vez)
+      var v = document.createElement('video');
+      v.muted = true; v.defaultMuted = true; v.loop = true; v.autoplay = true; v.playsInline = true;
+      v.setAttribute('muted', ''); v.setAttribute('playsinline', ''); v.setAttribute('disablepictureinpicture', '');
+      v.setAttribute('tabindex', '-1');
+      box.appendChild(v);
+      cachedMedia(ic.video).then(function (src) {
+        if (centerVid !== key) return; // cambió mientras se descargaba
+        v.src = src;
+        var p = v.play(); if (p && p.catch) p.catch(function () {});
+      });
+      return;
+    }
+    var id = encodeURIComponent(ic.youtube_id);
+    var fr = document.createElement('iframe');
+    fr.title = ic.label || 'Vídeo';
+    fr.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    fr.allow = 'autoplay; encrypted-media; picture-in-picture';
+    fr.setAttribute('sandbox', 'allow-scripts allow-presentation' + (ic.allow_same_origin ? ' allow-same-origin' : ''));
+    fr.setAttribute('tabindex', '-1');
+    fr.src = 'https://www.youtube-nocookie.com/embed/' + id +
+             '?autoplay=1&mute=1&loop=1&playlist=' + id +
+             '&controls=0&rel=0&playsinline=1&modestbranding=1&disablekb=1&iv_load_policy=3&fs=0';
+    box.appendChild(fr);
+  }
+
+  /* ---------------- Caché de vídeos subidos ---------------- */
+  // Cada vídeo subido se descarga una vez y se guarda en la Cache Storage del navegador (persiste entre
+  // recargas y sin conexión). Se reproduce desde un blob local, así que no se vuelve a pedir al servidor.
+  // Los nombres de archivo son únicos: un vídeo nuevo es otra URL y el antiguo se borra de la caché.
+  var MEDIA_CACHE = 'wk-media-v1';
+  var mediaReq = {};   // ruta → Promise<url reproducible>
+  var mediaBlob = {};  // ruta → URL blob: creada (para liberarla)
+  var canCache = !!(window.caches && window.fetch && window.URL && URL.createObjectURL);
+  if (canCache && navigator.storage && navigator.storage.persist) {
+    try { navigator.storage.persist().catch(function () {}); } catch (e) {} // pide que no se borre por falta de espacio
+  }
+
+  function cachedMedia(path) {
+    if (mediaReq[path]) return mediaReq[path];
+    if (!canCache) return Promise.resolve(path);
+    var p = caches.open(MEDIA_CACHE).then(function (cache) {
+      return cache.match(path).then(function (hit) {
+        if (hit) return hit;
+        return fetch(path, { credentials: 'omit' }).then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return cache.put(path, res.clone()).then(function () { return res; }, function () { return res; });
+        });
+      });
+    }).then(function (res) { return res.blob(); })
+      .then(function (blob) { var u = URL.createObjectURL(blob); mediaBlob[path] = u; return u; })
+      .catch(function () { delete mediaReq[path]; return path; }); // sin caché: directamente del servidor
+    mediaReq[path] = p;
+    return p;
+  }
+
+  /** Borra de la caché (y de memoria) los vídeos que ya no usa ningún icono. */
+  function pruneMedia(icons) {
+    var keep = {};
+    icons.forEach(function (ic) { if (ic.type === 'video' && ic.video) keep[new URL(ic.video, location.href).pathname] = 1; });
+    Object.keys(mediaBlob).forEach(function (p) {
+      if (!keep[new URL(p, location.href).pathname]) { URL.revokeObjectURL(mediaBlob[p]); delete mediaBlob[p]; delete mediaReq[p]; }
+    });
+    if (!canCache) return;
+    caches.open(MEDIA_CACHE).then(function (cache) {
+      return cache.keys().then(function (reqs) {
+        reqs.forEach(function (r) { if (!keep[new URL(r.url).pathname]) cache.delete(r); });
+      });
+    }).catch(function () {});
   }
 
   /* ---------------- Welcome / Bienvenidos ---------------- */
@@ -243,7 +341,7 @@
 
   function openModal(ic) {
     closeModal();
-    if (ic.blocked || (ic.type !== 'youtube' && !frameUrlOk(ic.url))) return;
+    if (ic.blocked || (ic.type === 'url' && !frameUrlOk(ic.url)) || (ic.type === 'video' && !ic.video)) return;
     track('open', { i: ic.id });
     openedAt = Date.now();
     openedIcon = ic.id;
@@ -253,11 +351,23 @@
 
     var box = document.createElement('div');
     box.className = 'box';
-    var fr = document.createElement('iframe');
+    var fr = document.createElement(ic.type === 'video' ? 'video' : 'iframe');
     fr.title = ic.label || '';
-    fr.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
 
-    if (ic.type === 'youtube') {
+    if (ic.type === 'video') {
+      // Vídeo subido, con sonido y controles; desde la caché del navegador
+      box.classList.add('video');
+      fr.controls = true; fr.autoplay = true; fr.playsInline = true;
+      fr.setAttribute('playsinline', ''); fr.setAttribute('controlslist', 'nodownload noremoteplayback');
+      fr.setAttribute('disablepictureinpicture', '');
+      cachedMedia(ic.video).then(function (src) {
+        if (!fr.isConnected) return; // la ventana ya se cerró
+        fr.src = src;
+        var p = fr.play(); if (p && p.catch) p.catch(function () {});
+      });
+      fr.addEventListener('play', bumpIdle);
+    } else if (ic.type === 'youtube') {
+      fr.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
       box.classList.add('video');
       fr.src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(ic.youtube_id) +
                '?autoplay=1&rel=0&playsinline=1&modestbranding=1';
@@ -268,15 +378,17 @@
       // Sin allow-top-navigation: la web cargada no puede sacar al kiosco de esta página.
       // allow-same-origin solo si el administrador lo activa para ese icono (y nunca para el propio kiosco,
       // que frameUrlOk ya ha descartado). El sandbox se fija antes de asignar src.
+      fr.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
       fr.setAttribute('sandbox', 'allow-scripts allow-forms' + (ic.allow_same_origin ? ' allow-same-origin' : ''));
       fr.src = ic.url;
     }
+    var isVid = ic.type === 'youtube' || ic.type === 'video';
 
     if (!full) {
       box.style.width = ic.width || '80%';
-      if (ic.type !== 'youtube' || ic.height !== 'auto') {
+      if (!isVid || ic.height !== 'auto') {
         fr.style.height = (ic.height && ic.height !== 'auto') ? ic.height : '80vh';
-        if (ic.type === 'youtube') fr.style.aspectRatio = 'auto';
+        if (isVid) fr.style.aspectRatio = 'auto';
       }
     }
     box.appendChild(fr);
@@ -299,7 +411,7 @@
     ov.addEventListener('pointerdown', bumpIdle);
     document.body.appendChild(ov);
     modal = ov;
-    if (ic.type !== 'youtube') {
+    if (ic.type === 'url') { // solo las páginas web (p. ej. el formulario de Bezares Mailing)
       mail = { win: fr.contentWindow, icon: ic.id, isMailing: false, loads: 0, lastLoad: 0, afterSubmit: false };
       fr.addEventListener('load', mailFrameLoaded);
     }

@@ -28,6 +28,13 @@ function admin_page_for_anchor(string $anchor): string
  *  Acciones (POST → redirección)
  * ================================================================ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Si el envío supera post_max_size, PHP descarta todo el formulario (también el token CSRF):
+    // se avisa del límite en lugar de mostrar «Solicitud no válida».
+    if (!$_POST && !$_FILES && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+        flash('El archivo es demasiado grande para el servidor (límite: ' . round(video_max_bytes() / 1048576)
+            . ' MB). Use un archivo más pequeño o suba el límite en cPanel (MultiPHP INI Editor).', 'err');
+        redirect('admin.php' . ($isAdmin ? '?p=iconos' : ''));
+    }
     csrf_check();
     $action = post_str('action', 40);
     $anchor = '';
@@ -54,6 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $c['center_font_size' . $n] = post_num('center_font_size' . $n, 1, 40, 6);
                         $c['center_bold' . $n]      = !empty($_POST['center_bold' . $n]);
                     }
+                    $c['center_video'] = !empty($_POST['center_video']);
                 });
                 flash('Textos centrales guardados.');
                 break;
@@ -282,7 +290,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $anchor = 'icon-' . $id;
                 $upload = $action === 'save_icon' ? handle_upload('icon_file', 'icon') : null;
                 $uploadDark = $action === 'save_icon' ? handle_upload('icon_file_dark', 'icondark') : null;
-                config_update(function (array &$c) use ($action, $id, $upload, $uploadDark, &$anchor) {
+                $uploadVideo = null;
+                try {
+                    $uploadVideo = $action === 'save_icon' ? handle_video_upload('video_file', 'video') : null;
+                } catch (RuntimeException $ex) {
+                    delete_upload($upload); delete_upload($uploadDark);
+                    throw $ex;
+                }
+                $videoUsed = false;
+                try {
+                config_update(function (array &$c) use ($action, $id, $upload, $uploadDark, $uploadVideo, &$videoUsed, &$anchor) {
                     $idx = null;
                     foreach ($c['icons'] as $i => $ic) { if ($ic['id'] === $id) { $idx = $i; } }
                     if ($idx === null) { delete_upload($upload); delete_upload($uploadDark); throw new RuntimeException('Icono no encontrado.'); }
@@ -290,6 +307,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($action === 'delete_icon') {
                         delete_upload($c['icons'][$idx]['icon_image']);
                         delete_upload($c['icons'][$idx]['icon_image_dark'] ?? '');
+                        delete_upload($c['icons'][$idx]['video'] ?? '');
                         array_splice($c['icons'], $idx, 1);
                         $anchor = 'iconos';
                         return;
@@ -319,9 +337,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         delete_upload($ic['icon_image_dark'] ?? '');
                         $ic['icon_image_dark'] = '';
                     }
-                    $ic['type'] = post_enum('type', ['url', 'youtube'], 'url');
+                    $ic['type'] = post_enum('type', ['url', 'youtube', 'video'], 'url');
                     $raw = post_str('url', 2000);
-                    if ($ic['type'] === 'youtube') {
+                    if ($ic['type'] === 'video') {
+                        // Vídeo subido: se conserva el anterior si no se envía otro
+                        if ($uploadVideo) {
+                            delete_upload($ic['video'] ?? '');
+                            $ic['video'] = $uploadVideo;
+                            $videoUsed = true;
+                        } elseif (empty($ic['video'])) {
+                            throw new RuntimeException('Seleccione el archivo de vídeo (MP4 o WebM).');
+                        }
+                        $ic['url'] = '';
+                        $ic['youtube_id'] = '';
+                    } elseif ($ic['type'] === 'youtube') {
                         $yid = youtube_id(parse_url_or_iframe($raw) ?: $raw);
                         if ($yid === '') { throw new RuntimeException('El enlace de YouTube no es válido.'); }
                         $ic['youtube_id'] = $yid;
@@ -338,6 +367,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $_POST['height'] = $hm[1];
                         }
                     }
+                    if ($ic['type'] !== 'video' && !empty($ic['video'])) { // ya no usa el vídeo subido: se borra
+                        delete_upload($ic['video']);
+                        $ic['video'] = '';
+                    }
                     $ic['display']        = post_enum('display', ['popup', 'fullscreen'], 'popup');
                     $ic['width']          = post_size('width', '80%', false);
                     $ic['height']         = post_size('height', 'auto');
@@ -349,6 +382,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $ic['allow_same_origin'] = !empty($_POST['allow_same_origin']);
                     $c['icons'][$idx] = $ic;
                 });
+                } finally {
+                    if ($uploadVideo && !$videoUsed) { delete_upload($uploadVideo); } // error o no se usó: fuera
+                }
                 flash($action === 'delete_icon' ? 'Icono eliminado.' : ($action === 'move_icon' ? 'Orden actualizado.' : 'Icono guardado.'));
                 break;
 
@@ -421,7 +457,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'reset_all':
                 $anchor = 'peligro';
-                foreach (glob(UPLOAD_DIR . '/*.{png,jpg,gif,webp,svg}', GLOB_BRACE) ?: [] as $f) {
+                foreach (glob(UPLOAD_DIR . '/*.{png,jpg,gif,webp,svg,mp4,webm}', GLOB_BRACE) ?: [] as $f) {
                     delete_upload('uploads/' . basename($f));
                 }
                 json_update(data_path('config.json'), function (array &$c) {
@@ -608,6 +644,9 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
   <h2>Textos centrales</h2>
   <form method="post">
     <?= csrf_field() ?><input type="hidden" name="action" value="save_center">
+    <label class="radio"><input type="checkbox" name="center_video" value="1"<?= !empty($c['center_video']) ? ' checked' : '' ?>>
+      <strong>Sin textos, reproducir el vídeo en el centro</strong></label>
+    <p class="hint">Activado: si los dos textos están vacíos, el kiosco reproduce el primer icono de vídeo (YouTube o subido) entre «Welcome» y el logo, fijo, sin sonido y en bucle, y ese icono desaparece del rodapié. Desactivado: se muestra la línea decorativa y el icono sigue en el rodapié.</p>
     <?php foreach (['' => 'Texto central 1 (arriba)', '2' => 'Texto central 2 (debajo)'] as $n => $title): ?>
     <fieldset class="ctext-block">
       <legend><?= $title ?></legend>
@@ -689,7 +728,10 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     $sumType = function (?array $s, string $type) use ($iconType): int {
         if (!$s) { return 0; }
         $n = 0;
-        foreach ($s['open'] as $id => $v) { if (($iconType[$id] ?? '') === $type) { $n += $v; } }
+        foreach ($s['open'] as $id => $v) {
+            $t = $iconType[$id] ?? '';
+            if ($t === $type || ($type === 'youtube' && $t === 'video')) { $n += $v; } // vídeo = YouTube o subido
+        }
         return $n;
     };
     $avg = function (?array $s): float {
@@ -701,7 +743,7 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
     $kpis = [
         ['Interacciones', 'Aperturas de los iconos del rodapié', $st['opens'], $cs['opens'] ?? null, false],
         ['Suscripciones a la newsletter', 'Clics en el botón de enviar del formulario', $st['subs'], $cs['subs'] ?? null, false],
-        ['Reproducciones de vídeo', 'Aperturas de iconos de YouTube', $sumType($st, 'youtube'), $hasCmp ? $sumType($cs, 'youtube') : null, false],
+        ['Reproducciones de vídeo', 'Aperturas de iconos de vídeo', $sumType($st, 'youtube'), $hasCmp ? $sumType($cs, 'youtube') : null, false],
         ['Visitas a páginas web', 'Aperturas de iconos de página web', $sumType($st, 'url'), $hasCmp ? $sumType($cs, 'url') : null, false],
         ['Tiempo medio por ventana', 'Desde que se abre hasta que se cierra', $avg($st), $hasCmp ? $avg($cs) : null, true],
         ['Arranques del kiosco', 'Cargas de la pantalla (encendidos y recargas)', $st['start'], $cs['start'] ?? null, false],
@@ -924,10 +966,19 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
         </div>
         <div class="grid3">
           <label>Contenido
-            <select name="type"><option value="url"<?= sel($ic['type'], 'url') ?>>Página web / iframe</option><option value="youtube"<?= sel($ic['type'], 'youtube') ?>>Vídeo de YouTube</option></select></label>
-          <label class="span2">URL, código &lt;iframe&gt; o enlace de YouTube
+            <select name="type"><option value="url"<?= sel($ic['type'], 'url') ?>>Página web / iframe</option><option value="youtube"<?= sel($ic['type'], 'youtube') ?>>Vídeo de YouTube</option><option value="video"<?= sel($ic['type'], 'video') ?>>Vídeo subido (MP4 / WebM)</option></select></label>
+          <label class="span2">URL, código &lt;iframe&gt; o enlace de YouTube (no se usa con «Vídeo subido»)
             <textarea name="url" rows="2" maxlength="2000"><?= e($ic['url']) ?></textarea></label>
         </div>
+        <div class="grid3">
+          <label class="span2">Vídeo subido (para «Vídeo subido»): MP4 (H.264) o WebM, máx. <?= (int)round(video_max_bytes() / 1048576) ?> MB
+            <input type="file" name="video_file" accept="video/mp4,video/webm,.mp4,.webm"></label>
+          <?php if (!empty($ic['video'])): ?>
+            <span class="icon-video-preview"><video src="<?= e($ic['video']) ?>" muted controls preload="metadata"></video>
+              <small><?= e(basename($ic['video'])) ?> · <?= is_file(APP_ROOT . '/' . $ic['video']) ? (int)round(filesize(APP_ROOT . '/' . $ic['video']) / 1048576) . ' MB' : 'no encontrado' ?></small></span>
+          <?php endif; ?>
+        </div>
+        <p class="hint">El kiosco descarga el vídeo subido una sola vez y lo guarda en la caché del navegador: después se reproduce sin volver a consumir datos, también sin conexión. Si sube otro vídeo, se descarga el nuevo y se borra el anterior de la caché.</p>
         <div class="grid3">
           <label>Mostrar como
             <select name="display"><option value="popup"<?= sel($ic['display'], 'popup') ?>>Ventana emergente</option><option value="fullscreen"<?= sel($ic['display'], 'fullscreen') ?>>Página completa</option></select></label>

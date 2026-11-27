@@ -19,6 +19,8 @@ ServerSignature Off
 </IfModule>
 
 AddType image/svg+xml .svg
+AddType video/mp4 .mp4
+AddType video/webm .webm
 
 # Archivos que nunca deben servirse
 <FilesMatch "\.(json|log|lock|md|bak|sql|ini|sh|dist|key)$|\.tmp[0-9a-f]+$|^\.">
@@ -41,7 +43,7 @@ AddType image/svg+xml .svg
   # Seguridad de la página del kiosco
   <Files "VXM7D4mGu83ERwJC.html">
     Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
-    Header set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src https://bezares.com https://*.bezares.com https://www.youtube-nocookie.com; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; object-src 'none'"
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-src https://bezares.com https://*.bezares.com https://www.youtube-nocookie.com; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; object-src 'none'"
     Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
   </Files>
 
@@ -49,11 +51,15 @@ AddType image/svg+xml .svg
   <FilesMatch "\.(png|jpe?g|gif|webp|svg)$">
     Header set Cache-Control "public, max-age=2592000"
   </FilesMatch>
+  # Vídeos subidos: nombre único y nunca cambian (el kiosco además los guarda en su propia caché)
+  <FilesMatch "\.(mp4|webm)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
 </IfModule>
 
 # Límite de subida (si el hosting usa mod_php; en cPanel con PHP-FPM ajústelo en "MultiPHP INI Editor")
 <IfModule mod_php.c>
-  php_value upload_max_filesize 8M
-  php_value post_max_size 10M
+  php_value upload_max_filesize 100M
+  php_value post_max_size 105M
   php_flag expose_php Off
 </IfModule>

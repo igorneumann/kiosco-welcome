@@ -116,6 +116,31 @@ img { -webkit-user-drag: none; }
 }
 .deco[hidden], #center[hidden] { display: none; }
 
+/* Vídeo en el centro (cuando no hay textos centrales): ocupa el hueco de la línea decorativa,
+   lo más grande posible en 16:9 sin salirse ni a lo ancho ni a lo alto. */
+#cvideo {
+  flex: 1 1 0;
+  min-height: 9vh;
+  width: 100%;
+  padding: 1.5vh 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+}
+#cvideo[hidden] { display: none; }
+#cvideo .vbox {
+  position: relative;
+  width: min(100cqw, 100cqh * 16 / 9);
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25);
+}
+/* Sin interacción: el vídeo no se puede pausar ni abrir; los toques pasan al fondo */
+#cvideo iframe, #cvideo video { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; object-fit: contain; }
+
 #center {
   flex: 0 1 auto;
   max-width: 100%;
@@ -238,9 +263,10 @@ img { -webkit-user-drag: none; }
   animation: popIn .3s cubic-bezier(.2,.9,.3,1.2);
 }
 @keyframes popIn { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-.overlay .box iframe { display: block; width: 100%; border: 0; background: #fff; }
+.overlay .box iframe, .overlay .box video { display: block; width: 100%; border: 0; background: #fff; }
+.overlay .box video { background: #000; }
 .overlay .box.video { background: #000; max-width: min(96vw, calc((100vh - 18vh) * 16 / 9)); }
-.overlay .box.video iframe { aspect-ratio: 16 / 9; height: auto; }
+.overlay .box.video iframe, .overlay .box.video video { aspect-ratio: 16 / 9; height: auto; }
 
 .overlay.full { background: #fff; }
 .overlay.full .box { width: 100vw; height: 100vh; height: 100dvh; max-width: none; max-height: none; border-radius: 0; box-shadow: none; animation: none; }

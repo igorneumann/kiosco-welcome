@@ -5,10 +5,12 @@ RemoveType .php .phtml .php3 .php4 .php5 .php7 .php8 .phar
 <FilesMatch ".*">
   Require all denied
 </FilesMatch>
-<FilesMatch "^[a-z]+-[a-f0-9]{16}\.(png|jpg|gif|webp|svg)$">
+<FilesMatch "^[a-z]+-[a-f0-9]{16}\.(png|jpg|gif|webp|svg|mp4|webm)$">
   Require all granted
 </FilesMatch>
 AddType image/svg+xml .svg
+AddType video/mp4 .mp4
+AddType video/webm .webm
 <IfModule mod_headers.c>
   Header set X-Content-Type-Options "nosniff"
   Header set Content-Security-Policy "default-src 'none'; sandbox"
