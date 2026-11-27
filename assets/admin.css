@@ -142,6 +142,16 @@ table.users th { font-size: 13px; color: var(--muted); font-weight: 600; }
 .icon-video-preview { display: flex; flex-direction: column; gap: 4px; }
 .icon-video-preview video { width: 220px; max-width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; }
 
+/* Indicador de subida de vídeo */
+.upload-progress { margin: 10px 0 12px; }
+.upload-progress .bar { height: 12px; border-radius: 99px; background: #e6eaef; overflow: hidden; }
+.upload-progress .bar span { display: block; height: 100%; width: 0; border-radius: inherit;
+  background: var(--brand, #00567d); transition: width .2s ease; }
+.upload-progress .txt { margin: 6px 0 0; font-size: 14px; color: var(--ink, #1b2230); font-variant-numeric: tabular-nums; }
+.upload-progress.done .bar span { background: #12805c; }
+.upload-progress.err .bar span { background: #c62828; }
+.upload-progress.err .txt { color: #c62828; font-weight: 600; }
+
 /* ==================================================================
    Panel del administrador: menú lateral (mismo estilo que Bezares Mailing).
    El mantenedor no usa estas reglas: sigue con la vista sencilla.

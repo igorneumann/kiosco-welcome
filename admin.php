@@ -24,6 +24,20 @@ function admin_page_for_anchor(string $anchor): string
     return $map[$anchor] ?? 'contenido';
 }
 
+/**
+ * Fin de una acción: redirección normal o, si el envío lo hizo el indicador de subida (XHR), la dirección
+ * en JSON para que el navegador vaya allí (así el mensaje de resultado no se pierde por el camino).
+ */
+function post_done(string $url): void
+{
+    if (($_SERVER['HTTP_X_UPLOAD_PROGRESS'] ?? '') === '1') {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['redirect' => $url]);
+        exit;
+    }
+    redirect($url);
+}
+
 /* ================================================================
  *  Acciones (POST → redirección)
  * ================================================================ */
@@ -33,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$_POST && !$_FILES && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
         flash('El archivo es demasiado grande para el servidor (límite: ' . round(video_max_bytes() / 1048576)
             . ' MB). Use un archivo más pequeño o suba el límite en cPanel (MultiPHP INI Editor).', 'err');
-        redirect('admin.php' . ($isAdmin ? '?p=iconos' : ''));
+        post_done('admin.php' . ($isAdmin ? '?p=iconos' : ''));
     }
     csrf_check();
     $action = post_str('action', 40);
@@ -474,7 +488,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (RuntimeException $ex) {
         flash($ex->getMessage(), 'err');
     }
-    redirect('admin.php' . ($isAdmin ? '?p=' . admin_page_for_anchor($anchor) : '') . ($anchor ? '#' . $anchor : ''));
+    post_done('admin.php' . ($isAdmin ? '?p=' . admin_page_for_anchor($anchor) : '') . ($anchor ? '#' . $anchor : ''));
 }
 
 /* ================================================================
@@ -972,7 +986,7 @@ function chk($a, $b): string { return (string)$a === (string)$b ? ' checked' : '
         </div>
         <div class="grid3">
           <label class="span2">Vídeo subido (para «Vídeo subido»): MP4 (H.264) o WebM, máx. <?= (int)round(video_max_bytes() / 1048576) ?> MB
-            <input type="file" name="video_file" accept="video/mp4,video/webm,.mp4,.webm"></label>
+            <input type="file" name="video_file" accept="video/mp4,video/webm,.mp4,.webm" data-max-bytes="<?= video_max_bytes() ?>"></label>
           <?php if (!empty($ic['video'])): ?>
             <span class="icon-video-preview"><video src="<?= e($ic['video']) ?>" muted controls preload="metadata"></video>
               <small><?= e(basename($ic['video'])) ?> · <?= is_file(APP_ROOT . '/' . $ic['video']) ? (int)round(filesize(APP_ROOT . '/' . $ic['video']) / 1048576) . ' MB' : 'no encontrado' ?></small></span>
